@@ -1,0 +1,31 @@
+
+=== Running AltAnalyze by Command-Line === In addition to the graphical user interface, AltAnalyze can be run using the command line in a terminal or DOS prompt window. This is accomplished by downloading the source code version of AltAnalyze, opening a terminal or DOS prompt window, changing directories to the AltAnalyze application folder and inputting the command line options. When using this version, you will need to install other dependencies on your own as described at: http://code.google.com/p/altanalyze/wiki/StandAloneDependencies. Example command-line options for AltAnalyze are given below. === Download the AltAnalyze Database (required) ===$python AltAnalyze.py --update Official --species Mm --version ÊEnsMart65=== Run AltAnalyze on input RNA-Seq or array data ===Examples:
+
+=== Downloading and installing a species specific database (mouse) ===
+
+python AltAnalyze.py --species Mm --update Official --version EnsMart62
+
+=== Analyzing RNASeq Files - BED format text files using default options === 
+
+$python AltAnalyze.py --species Mm --platform RNASeq --bedDir "C:/BEDFiles" --groupdir "C:/BEDFiles/groups.YourExperiment.txt" --compdir "C:/BEDFiles/comps.YourExperiment.txt" --output "C:/BEDFiles" --expname "YourExperiment"
+
+=== Analyzing CEL files - Affymetrix 3Õ array using default options and GO-Elite === 
+
+$python AltAnalyze.py --species Mm --arraytype "3'array" --celdir "C:/CELFiles" --groupdir "C:/CELFiles/groups.YourExperiment.txt" --compdir "C:/CELFiles/comps.YourExperiment.txt" --output "C:/CELFiles" --expname "YourExperiment --runGOElite yes"
+
+=== Analyzing CEL files - Exon 1.0 array using default options === 
+
+$python AltAnalyze.py --species Mm --arraytype exon --celdir "C:/CELFiles" --groupdir "C:/CELFiles/groups.YourExperiment.txt" --compdir "C:/CELFiles/comps.YourExperiment.txt" --output "C:/CELFiles" --expname "YourExperiment"
+
+=== Analyzing CEL files - Exon 1.0 array using custom options === 
+
+$python AltAnalyze.py --species Hs --arraytype exon --celdir "C:/CELFiles" --groupdir "C:/CELFiles/groups.YourExperiment.txt" --compdir "C:/CELFiles/comps.YourExperiment.txt" --output "C:/CELFiles" --expname "YourExperiment" --runGOElite no --dabgp 0.01 --rawexp 100 --avgallss yes --noxhyb yes --analyzeAllGroups " all groups" --GEcutoff 4 --probetype core --altp 0.001 --altmethod FIRMA --altscore 8 --exportnormexp yes --runMiDAS no --ASfilter yes --mirmethod "two or more" --calcNIp yes
+
+=== Analyzing Expression file - Gene 1.0 array using default options, without GO-Elite === 
+
+$python AltAnalyze.py --species Mm --arraytype gene --expdir "C:/CELFiles/ExpressionInput/exp.YourExperiment.txt" --groupdir "C:/CELFiles/groups.YourExperiment.txt" --compdir "C:/CELFiles/comps.YourExperiment.txt" --statdir "C:/CELFiles/ExpressionInput/stats.YourExperiment.txt" --output "C:/CELFiles"
+
+=== Analyzing Filtered Expression file - Exon 1.0 array using default options === 
+
+$python AltAnalyze.py --species Hs --arraytype exon --filterdir "C:/CELFiles/Filtered/Hs_Exon_prostate_vs_lung.p5_average.txt" --output "C:/CELFiles"
+=== Results Interpretation === http://code.google.com/p/altanalyze/wiki/TutorialsAdditional Detailshttp://altAnalyze.org/help.htm#commandline
