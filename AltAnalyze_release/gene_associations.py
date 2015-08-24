@@ -659,7 +659,7 @@ def predictIDSource(id,system_codes):
         for i in id_types:
             id_type_count.append((id_types[i],i))
         id_type_count.sort()
-        print id_type_count
+        #print id_type_count
         id_type = id_type_count[-1][-1]
     for code in system_codes:
         if system_codes[code] == id_type: source_data = id_type
@@ -1359,7 +1359,8 @@ class GeneIDInfo:
     def setModID(self,mod_list): self.mod_list = mod_list
     def ModID(self): return self.mod_list
     def Report(self):
-        output = self.GeneID()+'|'+self.System()
+        try: output = self.GeneID()+'|'+self.System()
+        except Exception: print self.Label()
         return output
     def __repr__(self): return self.Report()
     
@@ -1523,8 +1524,7 @@ class WikiPathwaysData:
     def Revision(self): return self.revision
     def PathwayGeneData(self): return self.gi
     def Report(self):
-        output = self.GeneID()+'|'+self.System()
-        return output
+        output = self.WPID()
     def setGeneData(self,ensembl,uniprot,refseq,unigene,entrez,mod,pubchem,cas,chebi):
         self.ensembl=ensembl;self.uniprot=uniprot;self.refseq=refseq;self.unigene=unigene
         self.entrez=entrez;self.mod=mod;self.pubchem=pubchem;self.cas=cas;self.chebi=chebi
@@ -1819,6 +1819,7 @@ def unifyGeneSystems(xml_data,species_code,mod):
     
     ### Import and combine all secondary systems
     system_ids={}
+    if 'Symbol' not in systems_db: systems_db['Symbol']=1
     st = systemTranslation();
     for source_data in systems_db:
         original_source = source_data
@@ -1840,6 +1841,7 @@ def unifyGeneSystems(xml_data,species_code,mod):
             
     mod_pathway={}
     ### Convert source IDs to MOD IDs
+    mapped=0
     for gi in xml_data:
         if gi.System() in system_ids:
             source_to_gene = system_ids[gi.System()]
@@ -1848,13 +1850,21 @@ def unifyGeneSystems(xml_data,species_code,mod):
                 geneID = string.lower(geneID)
             if geneID in source_to_gene:
                 for mod_id in source_to_gene[geneID]:
+                    mapped+=1
                     try: mod_pathway[mod_id].append(gi.Pathway())
                     except Exception: mod_pathway[mod_id] = [gi.Pathway()]
                 gi.setModID(source_to_gene[geneID]) ### Update this object to include associated MOD IDs (e.g., Ensembl or Entrez)
             else:
-                null=[]
-                #print [gi.GeneID()]
-    
+                source_to_gene = system_ids['Symbol'] ### Assume the missing ID is a symbol
+                geneID = string.lower(geneID)
+                if geneID in source_to_gene:
+                    for mod_id in source_to_gene[geneID]:
+                        mapped+=1
+                        try: mod_pathway[mod_id].append(gi.Pathway())
+                        except Exception: mod_pathway[mod_id] = [gi.Pathway()]
+                    gi.setModID(source_to_gene[geneID]) ### Update this object to include associated MOD IDs (e.g., Ensembl or Entrez)
+    #print mapped;sys.exit()
+         
     ### If the MOD gene IDs are in the pathway then add these
     for gi in xml_data:
         source_data = gi.System() 
@@ -1864,6 +1874,7 @@ def unifyGeneSystems(xml_data,species_code,mod):
             try: mod_pathway[gi.GeneID()].append(gi.Pathway())
             except Exception: mod_pathway[gi.GeneID()] = [gi.Pathway()]
             gi.setModID([gi.GeneID()])
+        
     #print len(system_ids),len(mod_pathway),len(mod_pathway)
     return mod_pathway
 

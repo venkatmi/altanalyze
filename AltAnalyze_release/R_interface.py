@@ -10,9 +10,11 @@ try:
     from rpy import r
     print "\n---------Using RPY---------\n"
 except Exception:
-    from pyper import *
-    print "\n---------Using PypeR---------\n"
-    r = R(use_numpy=True)
+    try:
+        from pyper import *
+        #print "\n---------Using PypeR---------\n"
+        r = R(use_numpy=True)
+    except Exception: pass
 
 ### Create a Directory for R packages in the AltAnalyze program directory (in non-existant)
 r_package_path = string.replace(os.getcwd()+'/Config/R','\\','/') ### R doesn't link \\
@@ -67,11 +69,12 @@ def checkForDuplicateIDs(input_file):
     key_list=[]
     fn=filepath(input_file)
     offset=0
+    nonNumericsPresent=False
     for line in open(fn,'rU').xreadlines():
         data = cleanUpLine(line)
         t = string.split(data,'\t')
         if first_row == True:
-            if 'row_clusters-flat' in t:
+            if 'row_clusters-flat' in t and 'row_clusters-flat' not in t[0]:
                 headers = string.join(['uid']+t[2:],'\t')+'\n'
                 offset = 1
             else:
@@ -79,11 +82,37 @@ def checkForDuplicateIDs(input_file):
             first_row = False
         else:
             key = t[0]
+            try:
+                k1,k2string.split(key,' ')
+                print [k1, k2],
+                if k1==k2: key = k1
+                print key
+            except Exception: pass
             if key!='column_clusters-flat':
                 key_list.append(key)
+                
+                try: s = map(float,t[offset+1:])
+                except Exception:
+                    nonNumericsPresent=True
                 key_db[key]=t
     
-    if len(key_db) != len(key_list) or offset>0:
+    if nonNumericsPresent:
+        import numpy
+        for key in key_db:
+            t = key_db[key]
+            s=[key]
+            if offset ==1: s.append('')
+            temp=[]
+            for value in t[offset+1:]:
+                try: temp.append(float(value))
+                except Exception: pass
+            avg=numpy.mean(temp)
+            for value in t[offset+1:]:
+                try: s.append(str(float(value)-avg))
+                except Exception: s.append('0.000101')
+            key_db[key]=s
+            
+    if len(key_db) != len(key_list) or offset>0 or nonNumericsPresent:
         print 'Duplicate IDs present... writing a cleaned-up version of the input file:'
         ### Duplicate IDs present
         input_file = input_file[:-4]+'-clean.txt'
@@ -128,7 +157,9 @@ def importHopachOutput(filename):
            
     split_cluster=[] 
     for cluster in cluster_db:
+        #print cluster,len(cluster_db[cluster]),(float(len(cluster_db[cluster]))/len(hopach_db))
         if len(cluster_db[cluster])>100 and (float(len(cluster_db[cluster]))/len(hopach_db))>0.3:
+            #print cluster
             if cluster<10:
                 split_cluster.append(cluster)
     import unique
@@ -175,21 +206,23 @@ class RScripts:
         #grp_list="C:/Users/venz6v/Documents/Altanalyze R/grous.txt"
         #gene_list="C:/Users/venz6v/Documents/Altanalyze R/gene.txt"
         filename=self.File()
-        samplelogfile=findParentDir(filename)+'/data.txt'
-        grp_list=findParentDir(filename)+'/sample.txt'
-        gene_list=findParentDir(filename)+'/gene.txt'
-        try: os.mkdir(findParentDir(samplelogfile)) ### create "hopach" dir if not present
-        except Exception: None
-        try: os.mkdir(findParentDir(grp_list)) ### create "hopach" dir if not present
-        except Exception: None
-        try: os.mkdir(findParentDir(gene_list)) ### create "hopach" dir if not present
-        except Exception: None
-        self._file = samplelogfile
-        samplelogfile = self.File()
-        self._file = grp_list
-        grp_list = self.File()
-        self._file = gene_list
-        gene_list = self.File()
+        samplelogfile=findParentDir(filename)+'Monocle/expressionFile.txt"'
+        grp_list=findParentDir(filename)+'Monocle/sampleGroups.txt"'
+        gene_list=findParentDir(filename)+'Monocle/geneAnnotations.txt"'
+        pseudo_tree=findParentDir(filename)+'Monocle/monoclePseudotime.pdf"'
+        pseudo_txt=findParentDir(filename)+'Monocle/monoclePseudotime.txt"'
+        #try: os.mkdir(findParentDir(samplelogfile)) ### create "hopach" dir if not present
+        #except Exception: None
+        #try: os.mkdir(findParentDir(grp_list)) ### create "hopach" dir if not present
+        #except Exception: None
+        #try: os.mkdir(findParentDir(gene_list)) ### create "hopach" dir if not present
+        #except Exception: None
+        #self._file = samplelogfile
+        #samplelogfile = self.File()
+        #self._file = grp_list
+        #grp_list = self.File()
+        #self._file = gene_list
+        #gene_list = self.File()
         
         print 'Loading monocle package in R'
         print_out = r('library("monocle")')
@@ -198,27 +231,28 @@ class RScripts:
             print_out = r('source("http://bioconductor.org/biocLite.R"); biocLite("monocle")')
             print print_out
         print_out = r('library("monocle")')
-        if "Error" in print_out: print 'unable to download the package "monocle"'; forceError 
+        if "Error" in print_out: print 'unable to download the package "monocle"';  
         print_out = r('library("monocle")')
         print "Reading Monocle data..."
-        data_import = 'fpkm_matrix<-read.delim(%s,row.names=1)' % samplelogfile
+        data_import = 'fpkm_matrix<-read.delim(%s,row.names=1,check.names=FALSE)' % samplelogfile
         print [data_import]
         print_out = r(data_import);
         print print_out
     
-        data_import = 'sample_sheet<-read.delim(%s,row.names=1)' % grp_list
+        data_import = 'sample_sheet<-read.delim(%s,row.names=1,check.names=FALSE)' % grp_list
         print [data_import]
         print_out = r(data_import);
         print print_out
-        data_import = 'gene_ann<-read.delim(%s,row.names=1)' % gene_list
+        data_import = 'gene_ann<-read.delim(%s,row.names=1,check.names=FALSE)' % gene_list
         print [data_import]
         print_out = r(data_import);
         print print_out
         print_out= r('pd <- new("AnnotatedDataFrame",data=sample_sheet)');
         print_out=r('fd <- new("AnnotatedDataFrame",data=gene_ann)');
-        print_out=r('URMM <- new("CellDataSet",exprs = as.matrix(fpkm_matrix),phenoData = pd,featureData =fd)');
+        print_out=r('URMM <- newCellDataSet(as.matrix(fpkm_matrix),phenoData = pd,featureData =fd)');
         print print_out
-        print_out=r('URMM<- detectGenes(URMM, min_expr = 3)')
+        #colname(a) == colname(b)
+        print_out=r('URMM<- detectGenes(URMM, min_expr = 0)')
         gene_exp='expressed_genes <- row.names(subset(fData(URMM), num_cells_expressed >=%s ))'% expPercent
         print [gene_exp]
         try:print_out = r(gene_exp)
@@ -231,22 +265,37 @@ class RScripts:
         print_out=r('diff_test_res <- differentialGeneTest(URMM[expressed_genes, ], fullModelFormulaStr = "expression~Group",cores=16)')
         print print_out
         gene_ord='ordering_genes <- row.names(subset(diff_test_res, pval < %s))' %p_val
+       
+        print_out=r(gene_ord); print print_out
         print_out=r('write.table(ordering_genes,file="ordering_genes.txt")')  ### Writing out the informative genes used
         print print_out
-        print_out=r(gene_ord); print print_out
         print_out=r('length(ordering_genes)'); print print_out
         
         print_out=r('ordering_genes <- intersect(ordering_genes, expressed_genes)'); print print_out
         print_out=r('URMM <- setOrderingFilter(URMM, ordering_genes)'); print print_out
         print_out=r('URMM <- reduceDimension(URMM, use_irlba = F)'); print print_out
-        span='URMM <- orderCells(URMM, num_paths = %s, reverse = F)'% numGroups
-        print_out=r(span); print print_out
-        print_out=r('pdf("Rpl.pdf")'); print print_out
+        for i in range(numGroups,1,-1):
+            span='URMM <- orderCells(URMM, num_paths = %s, reverse = F)'% i;
+            
+            print_out=r(span);
+            print print_out
+            if "Error" in print_out:
+              continue
+            else:
+                print_out=r(span);print i
+                print print_out
+                break
+        
+        print_out=r('png("Monocle/monoclePseudotime.png")');
+        print print_out
         print_out=r('plot_spanning_tree(URMM)'); print print_out
         print_out=r('dev.off()')
-        print_out=r('write.table(pData(URMM),file="grpdata.txt")')
-        print_out=r('pdf("Rplots.pdf")')
+        print_out=r('pdf("Monocle/monoclePseudotime.pdf")');
         print print_out
+        print_out=r('plot_spanning_tree(URMM)'); print print_out
+        print_out=r('dev.off()')
+        print_out=r('write.table(pData(URMM),file="Monocle/monoclePseudotime.txt")') 
+        
         print " completed"
     
     def AffyNormalization(self,normalization_method,probe_level,batch_effects):
@@ -385,6 +434,12 @@ class RScripts:
             return 'continue'
         else: return 'break'
     def Hopach(self,cluster_method,metric_gene,force_gene,metric_array,force_array):
+        print_out = r('library("Biobase")')
+        if "Error" in print_out:
+            print 'Installing the R package "Biobase" in Config/R'
+            print_out = r('source("http://bioconductor.org/biocLite.R"); biocLite("Biobase")')
+            if "Error" in print_out: print 'unable to download the package "Biobase"'; forceError 
+            print_out = r('library("Biobase")')
         print_out = r('library("hopach")')
         if "Error" in print_out:
             print 'Installing the R package "hopach" in Config/R'
@@ -622,103 +677,127 @@ def read_directory(sub_dir):
     return dir_list2
     
 def CreateFilesMonocle(filename,rawExpressionFile,species='Hs'):
+    first_row = True
+    key_db={}
+    key_list=[]
+    fn=filepath(filename)
+    offset=0
+    nonNumericsPresent=False
     try:
         import gene_associations
         gene_to_symbol = gene_associations.getGeneToUid(species,('hide','Ensembl-Symbol'))
-    except Exception: gene_to_symbol={}
-        
-    #Create the files for Monocle
+    except Exception:
+        print "gene_symbols present"
+        gene_to_symbol={}
     setWorkingDirectory(findParentDir(filename)[:-1])
-    try: os.mkdir(findParentDir(filename)[:-1])
+    try: os.mkdir(findParentDir(filename)+'/Monocle')
     except Exception: None     
     #filename=self.File() 
     x = 0
-    data_name=findParentDir(filename)+'/data.txt'
-    gene_name=findParentDir(filename)+'/gene.txt'
-    sample_name=findParentDir(filename)+'/sample.txt'
+    data_name=findParentDir(filename)+'/Monocle/expressionFile.txt'
+    gene_name=findParentDir(filename)+'/Monocle/geneAnnotations.txt'
+    sample_name=findParentDir(filename)+'/Monocle/sampleGroups.txt'
     gene_names = [];
     gene_list=[];
     dat=[];
-
     export_cdt = open(sample_name,'w')
     export_gene=open(gene_name,'w')
-    for line in open(filename,'rU').xreadlines():      
-      data = cleanUpLine(line)
-      headers = string.split(data,'\t')
-      dat.append(line)
-      if data[0] != '#':
-        if x == 1:
-             gen=headers[0];
-             gen=(gen.split(" "));
-             ge_lt=gen[0];
-             gene=string.join(gen,'\t')
-             gene_names.append(gene)
-             gene_list.append(ge_lt)
-        if x == 0: 
-            array_names = []; array_linker_db = {}; d = 0
-            for entry in headers[1:]:
+    for line in open(fn,'rU').xreadlines():
+        data = cleanUpLine(line)
+        t = string.split(data,'\t')
+        if first_row == True:
+            if 'row_clusters-flat' in t and 'row_clusters-flat' not in t[0]:
+                headers = string.join(t[2:],'\t')+'\n'
+                offset = 1
+            else:
+                headers = string.join(t[1:],'\t')+'\n'
+                
+            first_row = False
+        else:
+            key = t[0]
+            if key!='column_clusters-flat':
+                key_list.append(key)
+                
+                try: s = map(float,t[offset+1:])
+                except Exception:
+                    nonNumericsPresent=True
+                key_db[key]=t
+    
+   
+    for key in key_list:
+            t = key_db[key]
+            s=[key]
+            if offset ==1: s.append('')
+            temp=[]
+            for value in t[offset+1:]:
+                try: temp.append(float(value))
+                except Exception: pass
+            min1=min(temp)
+        
+            for value in t[offset+1:]:
+                try: s.append(str(float(value)-min1))
+                except Exception: s.append('0.000101')
+            key_db[key]=s
+    export_object = open(data_name,'w') 
+    export_object.write(''+'\t'+headers) ### Header is the same for each file
+    for key in key_list:
+            t = key_db[key]
+            if offset > 0:
+                t = [t[0]]+t[1+offset:]
+            export_object.write(string.join(t,'\t')+'\n') ### Write z-score values and row names
+    export_object.close()
+    print 'File written...'
+    #return input_file
+
+    
+    array_names = []; array_linker_db = {}; d = 0
+    for entry in headers.split('\t'):
+                
+                entry=cleanUpLine(entry)
                 if '::' in entry:
                     a = (entry.split("::"))
                 else:
                     a = (entry.split(":"))
-                a = reversed(a)
-                ent=string.join(a,'\t');
-                if(ent[0].isdigit()):
-                    ent='X'+ent[0:]
+                
+                #entry=string.join(a,'.')
+              
+                ent=entry+'\t'+a[0];
+                #if(ent[0].isdigit()):
+                #    ent='X'+ent[0:]
+                
+                #if '-' in ent:
+                 #   ent=string.replace(ent,'-','.')
+                #if '+' in ent:
+                 #   ent=string.replace(ent,'+','.')
                     #print j
                 array_names.append(ent);
-            x = 1
-            
     i=0
     eheader = string.join(['']+['Group'],'\t')+'\n' ### format column-flat-clusters for export
     export_cdt.write(eheader)
     for row in array_names:
-        export_cdt.write(row +'\n')
+        export_cdt.write(row+'\n')
         i+=1
     export_cdt.close()
     gheader = string.join(['']+ ['gene_short_name'],'\t')+'\n' ### format column-flat-clusters for export
     export_gene.write(gheader)
-    
-    export_object = open(data_name,'w')
-    """
-    for row in array_names:
-        group=string.split(row,'\t')
-        export_object.write('\t'+group[0])
-        #print group[0]
-    export_object.write('\n')
-    """
-    firstRow=True
-    for line in open(rawExpressionFile,'rU').xreadlines():
-        data = cleanUpLine(line)
-        t = string.split(data,'\t')
-        id = t[0]; nid=id
-        proceed = False
-        if firstRow:
-            new_headers=[]
-            headers = t[1:]
-            for i in headers:
-                i = string.replace(i,':','-')
-                new_headers.append(i)
-            export_object.write(string.join(['UID']+new_headers,'\t')+'\n')
-            firstRow=False
-        else:
-            if id in gene_list:
-                proceed = True
-            else:
-                if id in gene_to_symbol:
-                    symbol = gene_to_symbol[id][0]
-                    if symbol in gene_list:
+   
+    for key in key_list:
+        if key in gene_to_symbol:
+             symbol = gene_to_symbol[id][0]
+             if symbol in gene_list:
                         nid = symbol
                         proceed = True
-                if proceed:
+             if proceed:
                     k=gene_list.index(nid)
                     export_object.write(line)
                     export_gene.write(id+'\n')
-                    #export_gene.write(gene_list[k]+'\n')
+        else:
+            export_gene.write(key+'\t'+key+'\n')
+ 
+            
     export_object.close() 
     export_gene.close()
-    
-############ IMPORT FILES END ############
+
     
 def reformatHeatmapFile(input_file):
     import unique
@@ -751,27 +830,31 @@ def reformatHeatmapFile(input_file):
     return export_file, len(unique_clusters)
 
 def performMonocleAnalysisFromHeatmap(species,heatmap_output_dir,rawExpressionFile):
+    numGroups=4
     if 'Clustering-' in heatmap_output_dir:
         export_file,numGroups = reformatHeatmapFile(heatmap_output_dir)
-    else:
-        export_file = heatmap_output_dir; numGroups=5
+    #else:
+    export_file = heatmap_output_dir;
     CreateFilesMonocle(export_file,rawExpressionFile,species=species)
     print 'Looking for',numGroups, 'Monocle groups in the input expression file.'
-    remoteMonocle(export_file,expPercent=5,pval=0.01,numGroups=numGroups)
+    remoteMonocle(export_file,expPercent=5,pval=0.05,numGroups=numGroups)
     
 if __name__ == '__main__':
     errors = []
     cluster_method='array';metric_gene="";force_gene='';metric_array="euclid";force_array=''
     analysis_method='hopach'; multtest_type = 'f'
     #Sample log File
-    filename = "/Volumes/SEQ-DATA/Eric/embryonic_singlecell_kidney/ExpressionOutput/Clustering/SampleLogFolds-Kidney.txt"
-    filename = "/Volumes/SEQ-DATA/SingleCell-Churko/Filtered/Unsupervised-AllExons/NewCardiacMarkers1/FullDataset/ExpressionOutput/Clustering/SampleLogFolds-CM.txt"
-    rawExpressionFile = '/Volumes/SEQ-DATA/SingleCell-Churko/Filtered/Unsupervised-AllExons/NewCardiacMarkers1/FullDataset/ExpressionInput/exp.CM-steady-state.txt'
+    #Input-exp.MixedEffectsThanneer-DPF3%20DMRT3%20FOXA1%20SMAD6%20TBX3%20amplify%20monocle-hierarchical_cosine_correlated.txt
+    filename='/Users/saljh8/Desktop/Grimes/KashishNormalization/6-5-2015/DataPlots/MarkerFinder/DataPlots/test.txt'
+    rawExpressionFile = filename
+    #filename = "/Volumes/SEQ-DATA/Eric/embryonic_singlecell_kidney/ExpressionOutput/Clustering/SampleLogFolds-Kidney.txt"
+    #filename = "/Volumes/SEQ-DATA/SingleCell-Churko/Filtered/Unsupervised-AllExons/NewCardiacMarkers1/FullDataset/ExpressionOutput/Clustering/SampleLogFolds-CM.txt"
+    #rawExpressionFile = '/Volumes/SEQ-DATA/SingleCell-Churko/Filtered/Unsupervised-AllExons/NewCardiacMarkers1/FullDataset/ExpressionInput/exp.CM-steady-state.txt'
     #filename = '/Users/saljh8/Desktop/Stanford/ExpressionInput/amplify/DataPlots/Clustering-exp.EB-SingleCell-GPCR-hierarchical_cosine_correlation.txt'
     #rawExpressionFile = '/Users/saljh8/Desktop/Stanford/ExpressionInput/exp.EB-SingleCell.txt'
     performMonocleAnalysisFromHeatmap('Hs',filename,rawExpressionFile);sys.exit()
     CreateFilesMonocle(filename,rawExpressionFile)
-    remoteMonocle(filename,expPercent=5,pval=0.01,numGroups=5);sys.exit()
+    remoteMonocle(filename,expPercent=0,pval=0.01,numGroups=5);sys.exit()
     
     filename = '/Users/nsalomonis/Downloads/GSE9440_RAW/ExpressionInput/exp.differentiation.txt'
     remoteAffyNormalization(filename,'rma',True,'remove'); sys.exit()

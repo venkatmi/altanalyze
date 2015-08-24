@@ -28,6 +28,7 @@ import ExpressionBuilder
 import time
 import webbrowser
 import traceback
+import AltAnalyze
 from sys import argv
 
 """
@@ -50,7 +51,8 @@ try:
             print 'WikiPathways visualization not supported (requires installation of suds)'
     try:
         from PIL import Image as PIL_Image
-        import ImageTk
+        try: import ImageTk
+        except Exception: from PIL import ImageTk
     except Exception:
         #print traceback.format_exc()
         #print 'Python Imaging Library not installed... using default PNG viewer'
@@ -70,7 +72,7 @@ except Exception:
     None
 
 command_args = string.join(sys.argv,' ')
-if len(sys.argv[1:])>1 and '-' in command_args: null=[]
+if len(sys.argv[1:])>1 and '-' in command_args and '--GUI' not in command_args: null=[]
 else:
     try:
         import Tkinter 
@@ -122,13 +124,14 @@ def returnFilesNoReplace(dir):
 def identifyCELfiles(dir,array_type,vendor):
     dir_list = read_directory(dir); dir_list2=[]; full_dir_list=[]
     datatype = 'arrays'
+    types={}
     for file in dir_list:
         original_file = file
         file_lower = string.lower(file); proceed = 'no'
         ### "._" indicates a mac alias
         if ('.cel' in file_lower[-4:] and '.cel.' not in file_lower) and file_lower[:2] != '._':
             proceed = 'yes'
-        elif ('.bed' in file_lower[-4:] or '.tab' in file_lower or '.junction_quantification.txt' in file_lower) and file_lower[:2] != '._':
+        elif ('.bed' in file_lower[-4:] or '.tab' in file_lower or '.junction_quantification.txt' in file_lower or '.bam' in file_lower) and file_lower[:2] != '._' and '.bai' not in file_lower:
             proceed = 'yes'
             datatype = 'RNASeq'
         elif array_type == "3'array" and '.cel' not in  file_lower[-4:] and '.txt' in file_lower[-4:] and vendor != 'Affymetrix':
@@ -150,6 +153,20 @@ def identifyCELfiles(dir,array_type,vendor):
     
     if datatype == 'RNASeq':
         checkBEDFileFormat(dir) ### Make sure the names are wonky
+        dir_list3=[]
+        c = string.lower(string.join(dir_list2,''))
+        if '.bam' in c and '.bed' in c: #If bed present use bed and not bam
+            for i in dir_list2:
+                if '.bam' not in i:
+                    dir_list3.append(i)
+            dir_list2 = dir_list3
+        elif '.bam' in c:
+            for i in dir_list2:
+                if '.bam' in i:
+                    dir_list3.append(string.replace(i,'.bam','.bed'))
+                elif '.BAM' in i:
+                    dir_list3.append(string.replace(i,'.BAM','.bed'))
+            dir_list2 = dir_list3         
         
     return dir_list2,full_dir_list
 
@@ -160,7 +177,12 @@ def checkBEDFileFormat(bed_dir):
     for filename in dir_list:
         if '.tab' in string.lower(filename) or '.bed' in string.lower(filename) or '.junction_quantification.txt' in string.lower(filename):
             condition_db[filename]=[]
-            
+
+    if len(condition_db)==0: ### Occurs if BAMs present but not .bed files
+        for filename in dir_list:
+            if '.bam' in string.lower(filename):
+                condition_db[filename]=[]
+                 
     ### Check to see if exon.bed and junction.bed file names are propper or faulty (which will result in downstream errors)
     double_underscores=[]
     no_doubles=[]
@@ -356,7 +378,7 @@ class StatusWindow:
             else:
                 root = Tk()
             self._parent = root
-            root.title('AltAnalyze version 2.0.8 beta')
+            root.title('AltAnalyze version 2.0.9 beta')
             statusVar = StringVar() ### Class method for Tkinter. Description: "Value holder for strings variables."
 
             height = 300; width = 700
@@ -430,7 +452,8 @@ class StatusWindow:
             try: sys.stdout = status; root.after(100,IDconverter(filename, species_code, input_source, output_source, self._parent))
             except Exception,e: IDconverter(filename, species_code, input_source, output_source, None)
         if analysis_type == 'predictGroups':
-            expFile, mlp_instance, gsp, reportOnly = info_list
+            try: expFile, mlp_instance, gsp, reportOnly = info_list
+            except Exception: expFile, mlp_instance, gsp, reportOnly = info_list
             try: sys.stdout = status; root.after(100,predictSampleExpGroups(expFile, mlp_instance, gsp, reportOnly, self._parent))
             except Exception,e: predictSampleExpGroups(expFile, mlp_instance, gsp, reportOnly, None)
         if analysis_type == 'preProcessRNASeq':
@@ -456,24 +479,34 @@ class StatusWindow:
         return self.original_sys_out
     
 def preProcessRNASeq(species,exp_file_location_db,dataset,mlp_instance,root):
+    for dataset in exp_file_location_db:
+        flx = exp_file_location_db[dataset]
     if root == None: display=False
     else: display=True
     try:
         import RNASeq, ExonArray
         print 'Pre-processing input files'
-        expFile = fl.ExpFile()
+        expFile = flx.ExpFile()
         count = verifyFileLength(expFile)
         if count==0:
-            biotypes = RNASeq.alignExonsAndJunctionsToEnsembl(species,exp_file_location_db,dataset,Multi=mlp_instance)
+            try: biotypes = RNASeq.alignExonsAndJunctionsToEnsembl(species,exp_file_location_db,dataset,Multi=mlp_instance)
+            except Exception:
+                try:
+                    flx = exp_file_location_db[dataset]; flx.setRootDir(parent_dir)
+                    fastq_folder = flx.RunKallisto()
+                    RNASeq.runKallisto(species,dataset,flx.RootDir(),fastq_folder,returnSampleNames=False)   
+                except Exception:
+                    print 'Kallisto failed due to:',traceback.format_exc() 
+
         else:
             biotypes = getBiotypes(expFile)
         array_linker_db,array_names = ExonArray.remoteExonProbesetData(expFile,{},'arraynames',array_type)
         steady_state_export = expFile[:-4]+'-steady-state.txt'
-        normalize_feature_exp = fl.FeatureNormalization()
-        try: excludeLowExpressionExons = fl.excludeLowExpressionExons()
+        normalize_feature_exp = flx.FeatureNormalization()
+        try: excludeLowExpressionExons = flx.excludeLowExpressionExons()
         except Exception: excludeLowExpressionExons = True
 
-        if fl.useJunctionsForGeneExpression():
+        if flx.useJunctionsForGeneExpression():
             if 'junction' in biotypes:
                 feature = 'junction'
             else:
@@ -561,12 +594,18 @@ def getAllKnownFeatures(feature):
                 except Exception: probeset_gene_db[gene] = [probeset]
     return probeset_gene_db
                         
-def predictSampleExpGroups(expFile, mlp_instance, gsp, reportOnly,root):
-    global graphic_links; graphic_links=[]
+def RemotePredictSampleExpGroups(expFile, mlp_instance, gsp, globalVars):
+    global species
+    global array_type
+    species, array_type = globalVars
+    predictSampleExpGroups(expFile, mlp_instance, gsp, False, None)
+
+def predictSampleExpGroups(expFile, mlp_instance, gsp, reportOnly, root):
+    global graphic_links; graphic_links=[];
     if root == None: display=False
     else: display=True
     
-    import RNASeq,ExpressionBuilder
+    import RNASeq,ExpressionBuilder; reload(RNASeq) ### allows for GUI testing with restarting
     try:
         if gsp.FeaturestoEvaluate() != 'AltExon':
             graphic_links = RNASeq.singleCellRNASeqWorkflow(species, array_type, expFile, mlp_instance, parameters=gsp, reportOnly=reportOnly)
@@ -576,6 +615,7 @@ def predictSampleExpGroups(expFile, mlp_instance, gsp, reportOnly,root):
             graphic_links3 = RNASeq.singleCellRNASeqWorkflow(species, 'exons', cluster_input_file, mlp_instance, parameters=gsp, reportOnly=reportOnly)
             graphic_links+=graphic_links2+graphic_links3
         print_out  = 'Predicted sample groups saved.'
+
         if len(graphic_links)==0:
             print_out  = 'No predicted sample groups identified. Try different parameters.'
         if display == False: print print_out
@@ -585,6 +625,10 @@ def predictSampleExpGroups(expFile, mlp_instance, gsp, reportOnly,root):
         except Exception: null=[]
     except Exception:
         error = traceback.format_exc()
+        if 'score_ls' in error:
+            error = 'Unknown error likely due to too few genes resulting from the filtering options.'
+        if 'options_result_in_no_genes' in error:
+            error = 'No genes differentially expressed with the input criterion'
         print_out = 'Predicted sample export failed..\n',error
         try: print print_out
         except Exception: pass ### Windows issue with the Tk status window stalling after pylab.show is called
@@ -640,8 +684,9 @@ def networkBuilder(inputDir,inputType,outputdir,interactionDirs_short,degrees,ex
         if output_filename==None:
             print_out = 'Network creation/visualization failed..\nNo outputs produced... try different options.\n'
             print_out += traceback.format_exc()
-            try: InfoWindow(print_out, 'Continue')
-            except Exception: None
+            if root != None and root != '':
+                try: InfoWindow(print_out, 'Continue')
+                except Exception: None
         else:
             if root != None and root != '':
                 try: openDirectory(outputdir)
@@ -661,9 +706,9 @@ def networkBuilder(inputDir,inputType,outputdir,interactionDirs_short,degrees,ex
     try: root.destroy()
     except Exception: None
     
-def vennDiagram(files_to_merge, output_venn_dir, root):
+def vennDiagram(files_to_merge, output_venn_dir, root, display=True):
     import VennDiagram
-    if root == None: display=False
+    if root == None and display==False: display=False
     else: display=True
     try:
         VennDiagram.compareInputFiles(files_to_merge,output_venn_dir,display=display)
@@ -671,8 +716,9 @@ def vennDiagram(files_to_merge, output_venn_dir, root):
     except Exception:
         error = traceback.format_exc()
         print_out = 'Venn Diagram export failed..\n',error
-        try: InfoWindow(print_out, 'Continue')
-        except Exception: None
+        if root != None and root != '':
+            try: InfoWindow(print_out, 'Continue')
+            except Exception: None
     try: root.destroy()
     except Exception: None
     
@@ -681,14 +727,39 @@ def altExonViewer(species,platform,exp_file,gene,show_introns,analysisType,root)
     transpose=True
     if root == None: display = False
     else: display = True
-    try: QC.displayExpressionGraph(species,platform,exp_file,gene,transpose,display=display,showIntrons=show_introns,analysisType=analysisType)
-    except Exception:
-        error = traceback.format_exc()
-        print_out = 'AltExon Viewer failed..\n',error
-        try: WarningWindow(print_out, 'Continue')
+    if analysisType == 'Sashimi-Plot':
+        try:
+            ### Create sashimi plot index
+            import SashimiIndex
+            print 'Indexing splicing-events'
+            SashimiIndex.remoteIndexing(species,exp_file)
+            import SashimiPlot
+            #reload(SashimiPlot)
+            print 'Running Sashimi-Plot...'
+            SashimiPlot.remoteSashimiPlot(species,exp_file,exp_file,gene) ### assuming the bam files are in the root-dir
+            if root != None and root != '':
+                print_out = 'Sashimi-Plot results saved to:\n'+exp_file+'SashimiPlots'
+                try: InfoWindow(print_out, 'Continue')
+                except Exception: None
+        except Exception:
+            error = traceback.format_exc()
+            print_out = 'AltExon Viewer failed..\n',error
+            if root != None and root != '':
+                try: WarningWindow(print_out, 'Continue')
+                except Exception: None
+        try: root.destroy()
         except Exception: None
-    try: root.destroy()
-    except Exception: None
+    else:
+        #print [analysisType, species,platform,exp_file,gene,transpose,display,show_introns]
+        try: QC.displayExpressionGraph(species,platform,exp_file,gene,transpose,display=display,showIntrons=show_introns,analysisType=analysisType)
+        except Exception:
+            error = traceback.format_exc()
+            print_out = 'AltExon Viewer failed..\n',error
+            if root != None and root != '':
+                try: WarningWindow(print_out, 'Continue')
+                except Exception: None
+        try: root.destroy()
+        except Exception: None
     
 def MergeFiles(files_to_merge, join_option, ID_option, output_merge_dir, root):
     import mergeFiles
@@ -752,7 +823,7 @@ def runLineageProfiler(fl, expr_input_dir, vendor, custom_markerFinder, geneMode
                     expr_input_dir = string.replace(expr_input_dir,'.txt','-steady-state.txt')
     
         print '\n****Running LineageProfiler****'
-        graphic_links = ExpressionBuilder.remoteLineageProfiler(fl,expr_input_dir,array_type,species,vendor,customMarkers=custom_markerFinder)
+        graphic_links = ExpressionBuilder.remoteLineageProfiler(fl,expr_input_dir,array_type,species,vendor,customMarkers=custom_markerFinder,specificPlatform=True)
         if len(graphic_links)>0:
             print_out = 'Lineage profiles and images saved to the folder "DataPlots" in the input file folder.'
             try: InfoWindow(print_out, 'Continue')
@@ -786,7 +857,7 @@ def runLineageProfiler(fl, expr_input_dir, vendor, custom_markerFinder, geneMode
     except Exception: None
     
 def performPCA(filename, pca_labels, pca_algorithm, transpose, root, plotType='3D',display=True,geneSetName=None, species=None):
-    import clustering
+    import clustering; reload(clustering)
     graphics = []
     if pca_labels=='yes' or pca_labels=='true'or pca_labels=='TRUE': pca_labels=True
     else: pca_labels=False
@@ -814,13 +885,13 @@ def performPCA(filename, pca_labels, pca_algorithm, transpose, root, plotType='3
 def createHeatMap(filename, row_method, row_metric, column_method, column_metric, color_gradient, transpose, contrast, root, display=True):
     graphics = []
     try:
-        import clustering
+        import clustering; reload(clustering)
         clustering.runHCexplicit(filename, graphics, row_method, row_metric, column_method, column_metric, color_gradient, transpose, display=display, contrast = contrast)
         print_out = 'Finished building heatmap.'
         try: print print_out
         except Exception: None ### Windows issue with the Tk status window stalling after pylab.show is called
         try: root.destroy()
-        except Exception: null=[]
+        except Exception: pass ### DO NOT PRINT HERE... CONFLICTS WITH THE STOUT
     except Exception:
         if 'importData' in traceback.format_exc():
             try: print traceback.format_exc(),'\n'
@@ -871,6 +942,10 @@ class StringVarFile:
                 new = new+c
         self.set(new)
         #except Exception: None ### Not sure why this occurs
+        try:
+            log_report = open(logfile,'a')
+            log_report.write(s); log_report.close() ### Variable to record each print statement
+        except Exception: pass
     def set(self,s): self.__stringvar.set(s); self.__window.update()   
     def get(self): return self.__stringvar.get()
     def flush(self): pass
@@ -987,18 +1062,42 @@ class GUI:
                 button5 = Tkinter.Button(frame1, compound=Tkinter.TOP, image=photo1,
                     text=image_file5, bg='green', command=lambda:view_FullImageOnClick(image_file5))
                 button5.image = photo1; button5.pack(side=Tkinter.TOP, padx=2, pady=2)
-                
+            elif assigned_index == 6:
+                image_file6 = image_file; #tl4 = Toplevel()
+                button6 = Tkinter.Button(frame1, compound=Tkinter.TOP, image=photo1,
+                    text=image_file6, bg='green', command=lambda:view_FullImageOnClick(image_file6))
+                button6.image = photo1; button6.pack(side=Tkinter.TOP, padx=2, pady=2)
+            elif assigned_index == 7:
+                image_file5 = image_file; #tl5 = Toplevel()
+                button7 = Tkinter.Button(frame1, compound=Tkinter.TOP, image=photo1,
+                    text=image_file7, bg='green', command=lambda:view_FullImageOnClick(image_file7))
+                button7.image = photo1; button7.pack(side=Tkinter.TOP, padx=2, pady=2)
+            elif assigned_index == 8:
+                image_file8 = image_file; #tl5 = Toplevel()
+                button8 = Tkinter.Button(frame1, compound=Tkinter.TOP, image=photo1,
+                    text=image_file8, bg='green', command=lambda:view_FullImageOnClick(image_file8))
+                button8.image = photo1; button8.pack(side=Tkinter.TOP, padx=2, pady=2)
+            elif assigned_index == 9:
+                image_file9 = image_file; #tl4 = Toplevel()
+                button9 = Tkinter.Button(frame1, compound=Tkinter.TOP, image=photo1,
+                    text=image_file9, bg='green', command=lambda:view_FullImageOnClick(image_file9))
+                button9.image = photo1; button9.pack(side=Tkinter.TOP, padx=2, pady=2)
+            elif assigned_index == 10:
+                image_file10 = image_file; #tl5 = Toplevel()
+                button10 = Tkinter.Button(frame1, compound=Tkinter.TOP, image=photo1,
+                    text=image_file10, bg='green', command=lambda:view_FullImageOnClick(image_file10))
+                button10.image = photo1; button10.pack(side=Tkinter.TOP, padx=2, pady=2)  
             assigned_index+=1
 
         # start the event loop
         use_selected_button = Button(self._parent, text="Use Selected", command=self.UseSelected) 
-        use_selected_button.pack(side = 'right', padx =10, pady = 5)
+        use_selected_button.pack(side = 'right', padx = 10, pady = 5)
         
         recluster_button = Button(self._parent, text="Re-Cluster", command=self.ReCluster) 
-        recluster_button.pack(side = 'right', padx =10, pady = 5)
+        recluster_button.pack(side = 'right', padx = 10, pady = 5)
 
         quit_button = Button(self._parent, text="Quit", command=self.quit) 
-        quit_button.pack(side = 'right', padx =10, pady = 5)
+        quit_button.pack(side = 'right', padx = 10, pady = 5)
 
         try: help_button = Button(self._parent, text='Help', command=self.GetHelpTopLevel); help_button.pack(side = 'left', padx = 5, pady = 5)
         except Exception: help_button = Button(self._parent, text='Help', command=self.linkout); help_button.pack(side = 'left', padx = 5, pady = 5)
@@ -1403,16 +1502,16 @@ class GUI:
 
         #if defaults == 'groups' or defaults == 'comps' or 'filter_for_AS' in option_list:
         if defaults != 'null':
-            height = 400; width = 400
+            height = 350; width = 400
             if defaults == 'groups':
                 notes = "For each file, type in a name for the group it belongs to\n(e.g., 24hrs, 48hrs, 4days, etc.)."
                 Label(self._parent,text=notes).pack(); label_text_str = 'AltAnalyze Group Names'
-                if len(option_list)<15: height = 320; width = 320
+                if len(option_list)<15: height = 320; width = 400
 
             elif defaults == 'batch':
                 notes = "For each file, type in a name for the BATCH it belongs to\n(e.g., batch1, batch2, batch3 etc.)."
                 Label(self._parent,text=notes).pack(); label_text_str = 'AltAnalyze Group Names'
-                if len(option_list)<15: height = 320; width = 320
+                if len(option_list)<15: height = 320; width = 400
             elif defaults == 'comps':
                 notes = "Experimental Group\t\t\tBaseline Group     "
                 label_text_str = 'AltAnalyze Pairwise Group Comparisons'
@@ -1420,17 +1519,17 @@ class GUI:
             elif 'filter_for_AS' in option_list:
                 label_text_str = 'AltAnalyze Alternative Exon Analysis Parameters'
                 height = 350; width = 400; use_scroll = 'yes'
-                if os.name != 'nt': width+=50
+                if os.name != 'nt': width+=100
             elif 'pathway_permutations' in option_list:
                 label_text_str = 'GO-Elite Parameters'
-                height = 400; width = 425; use_scroll = 'yes'
+                height = 350; width = 425; use_scroll = 'yes'
             elif 'expression_data_format' in option_list:
                 label_text_str = "AltAnalyze Expression Dataset Parameters"
                 height = 350; width = 400; use_scroll = 'yes'
-                if os.name != 'nt': width+=50
+                if os.name != 'nt': width+=100
             elif 'Genes_network' in option_list:
                 label_text_str = "Network Analysis Parameters"
-                height = 430; width = 400; use_scroll = 'yes'
+                height = 350; width = 400; use_scroll = 'yes'
                 #if os.name != 'nt': width+=50
             elif 'GeneSelectionPredict' in option_list:
                 notes = "Perform an unsupervised or supervised analysis to identify the\npredominant sample groups via expression clustering"
@@ -1445,7 +1544,7 @@ class GUI:
                 height = 310; width = 400; use_scroll = 'yes'
                 
             if os.name != 'nt':height+=75; width+=150
-            if os.name== 'nt':height+=25; width+=25
+            if os.name== 'nt':height+=25; width+=50
             if 'linux' in sys.platform: offset = 25
             else: offset=0
             self.sf = PmwFreeze.ScrolledFrame(self._parent,
@@ -1466,7 +1565,12 @@ class GUI:
                 self.group_tag = 'Exon/Junction Filtering Options'
                 od = option_db['expression_threshold']
                 if od.ArrayOptions() == ['NA']: create_group = 'no'
-            elif 'expression_data_format' in option_list:
+                if 'rpkm_threshold' in option_list and create_group== 'no':
+                    create_group='yes'
+                    self.group_tag = 'Gene Expression Filtering Options'
+                    od = option_db['rpkm_threshold']
+                    if od.ArrayOptions() == ['NA']: create_group = 'no'
+            elif 'expression_data_format' in option_list and 'rpkm_threshold' not in option_list:
                 self.group_tag = 'Gene Expression Analysis Options'
             if 'filter_probe_types' in option_list:
                 self.group_tag = 'Primary Alternative Exon Parameters'
@@ -2004,6 +2108,13 @@ class GUI:
                         else: self._user_variables[option] = 'no'
 
             custom_group_endpoints = ['ge_ptype', 'get_additional', 'expression_threshold', 'run_goelite', 'gene_expression_cutoff', 'microRNA_prediction_method']
+            try:
+                eod = option_db['expression_threshold']
+                if eod.ArrayOptions() == ['NA']:
+                    custom_group_endpoints.append('rpkm_threshold') ### Ensures that if analyzing pre-compiled gene expression values, only certain items are shown and in a frame
+                    custom_group_endpoints.remove('expression_threshold')
+                    #insert_into_group = 'yes'
+            except Exception:  pass 
             if option in custom_group_endpoints and insert_into_group == 'yes':
                 ### This is employed when we want to place several items into a group frame together.
                 ### Since this is a generic class, we need to setup special cases to do this, however,
@@ -2067,7 +2178,7 @@ class GUI:
                 try: comp13.pack(anchor = 'w', padx = 10, pady = pady_int)
                 except Exception: null=[]
                 enter_index=0; radio_index=0; dropdown_index=0
-                if 'ge_ptype' in option or 'expression_threshold' in option or 'gene_expression_cutoff' in option:
+                if 'ge_ptype' in option or 'expression_threshold' in option or 'gene_expression_cutoff' in option or 'rpkm_threshold' in option:
                     custom_group = PmwFreeze.Group(self.sf.interior(),tag_text = self.group_tag)
                     custom_group.pack(fill = 'both', expand = 1, padx = 10, pady = 10)
                     insert_into_group = 'yes'
@@ -2119,6 +2230,11 @@ class GUI:
                 if expFilePresent:
                     button_instance = Button(self._parent, text='Test Settings', command=runPredictGroupsTest)
                     button_instance.pack(side = 'left', padx = 5, pady = 5)
+                    
+            if 'build_exon_bedfile' in option_list and array_type == 'RNASeq':
+                self.pdf_help_file = filepath('AltDatabase/kallisto/license.txt')
+                button_instance = Button(self._parent, text='Kallisto License', command=self.openPDFHelp)
+                button_instance.pack(side = 'left', padx = 5, pady = 5)
                 
             self._parent.protocol("WM_DELETE_WINDOW", self.deleteWindow)
             self._parent.mainloop()
@@ -2189,7 +2305,11 @@ class GUI:
         
         if reportOnly:
             ### Only used to report back what the number of regulated genes are if the gene expression file is present
-            report = RNASeq.singleCellRNASeqWorkflow(species, array_type, expFile, mlp_instance, parameters=gsp, reportOnly=reportOnly)
+            reload(RNASeq)
+            try: report = RNASeq.singleCellRNASeqWorkflow(species, array_type, expFile, mlp_instance, parameters=gsp, reportOnly=reportOnly)
+            except Exception: report = traceback.format_exc()
+            if 'options_result_in_no_genes' in report:
+                report = 'Options are too stringent. Try relaxing the thresholds.'
             try: InfoWindow(report, 'Continue')
             except Exception: print report
         else:
@@ -2243,8 +2363,10 @@ class GUI:
             try: os.startfile('"'+self.pdf_help_file+'"')
             except Exception:  os.system('open "'+self.pdf_help_file+'"')
         elif 'darwin' in sys.platform: os.system('open "'+self.pdf_help_file+'"')
-        elif 'linux' in sys.platform: os.system('xdg-open "'+self.pdf_help_file+'"')   
-        self._tl.destroy()
+        elif 'linux' in sys.platform: os.system('xdg-open "'+self.pdf_help_file+'"')
+        if 'license' not in self.pdf_help_file:
+            try: self._tl.destroy()
+            except Exception: pass
 
     def openOnlineHelp(self):
         try: webbrowser.open(self.url)
@@ -2699,16 +2821,59 @@ def importResourceList():
         resource_list.append(resource)
     return resource_list
 
-def importGeneList(filename):
+def importGeneList(filename,limit=None):
+    ### Optionally limit the number of results imported
     gene_list=[]
-    fn=filepath(filename); resource_list=[]
+    fn=filepath(filename); resource_list=[]; count=0
     for line in open(fn,'rU').readlines():             
         data = cleanUpLine(line)
         gene = string.split(data,'\t')[0]
-        if gene not in gene_list and gene != 'GeneID' and gene != 'UID':
+        if ' ' in gene:
+            gene = string.split(gene,' ')[0]
+        if gene not in gene_list and gene != 'GeneID' and gene != 'UID' and gene != 'probesetID':
             gene_list.append(gene)
+            count+=1
+            if limit != None:
+                if limit==count: break
     gene_list = string.join(gene_list,',')
     return gene_list
+
+def exportJunctionList(filename,limit=None):
+    ### Optionally limit the number of results imported
+    parent = export.findParentDir(filename)
+    file = export.findFilename(filename)
+    export_file = parent+'/top'+str(limit)+'/'+file
+    #export_file = filename[:-4]+'-top-'+str(limit)+'.txt'
+    eo = export.ExportFile(export_file)
+    fn=filepath(filename); count=0; firstLine=True
+    for line in open(fn,'rU').readlines():             
+        data = cleanUpLine(line)
+        t = string.split(data,'\t')
+        if firstLine:
+            firstLine = False
+        elif '-' in t[0]:
+            junctions = string.split(data,'\t')[0]
+            junctions = string.replace(junctions,'|',' ')
+            junctions = string.join(string.split(junctions,':')[1:],':')
+            eo.write(junctions+'\n')
+            count+=1
+            if limit==count: break
+        else:
+            junctions = t[1] #Atg9a:ENSMUSG00000033124:E1.1-E3.1|ENSMUSG00000033124:E1.1-E3.2	
+            junctions = string.split(junctions,'|') #ENSMUSG00000032314:I11.1_55475101-E13.1-ENSMUSG00000032314:E11.1-E13.1|ENSMUSG00000032314:I11.1_55475153;I11.1_55475101
+            for junction_pair in junctions:
+                if '-' in junction_pair:
+                    try:
+                        a,b = string.split(junction_pair,'-ENS')
+                        b = 'ENS'+b
+                        eo.write(a+' '+b+'\n')
+                        count+=1
+                        if limit==count: break      
+                    except Exception:
+                        pass
+
+    eo.close()
+    return export_file
 
 def importConfigFile():
     #print "importing config file"
@@ -3186,9 +3351,9 @@ def importDefaultInfo(filename,array_type):
     for line in open(fn,'rU').readlines():             
         data = cleanUpLine(line)
         if '-expr' in filename:
-            array_abrev, dabg_p, rpkm_threshold, gene_exp_threshold, exon_exp_threshold, exon_rpkm_threshold, expression_threshold, perform_alt_analysis, analyze_as_groups, expression_data_format, normalize_feature_exp, normalize_gene_data, avg_all_for_ss, include_raw_data, probability_algorithm, batch_effects, marker_finder, visualize_results, run_lineage_profiler, run_goelite = string.split(data,'\t')
+            array_abrev, dabg_p, rpkm_threshold, gene_exp_threshold, exon_exp_threshold, exon_rpkm_threshold, expression_threshold, perform_alt_analysis, analyze_as_groups, expression_data_format, normalize_feature_exp, normalize_gene_data, avg_all_for_ss, include_raw_data, probability_algorithm, FDR_statistic, batch_effects, marker_finder, visualize_results, run_lineage_profiler, run_goelite = string.split(data,'\t')
             if array_type == array_abrev:
-                return dabg_p, rpkm_threshold, gene_exp_threshold, exon_exp_threshold, exon_rpkm_threshold, expression_threshold, perform_alt_analysis, analyze_as_groups, expression_data_format, normalize_feature_exp, normalize_gene_data, avg_all_for_ss, include_raw_data, probability_algorithm, batch_effects, marker_finder, visualize_results, run_lineage_profiler, run_goelite
+                return dabg_p, rpkm_threshold, gene_exp_threshold, exon_exp_threshold, exon_rpkm_threshold, expression_threshold, perform_alt_analysis, analyze_as_groups, expression_data_format, normalize_feature_exp, normalize_gene_data, avg_all_for_ss, include_raw_data, probability_algorithm, FDR_statistic, batch_effects, marker_finder, visualize_results, run_lineage_profiler, run_goelite
             
         if '-alt' in filename:
             array_abrev, analysis_method, additional_algorithms, filter_probeset_types, analyze_all_conditions, p_threshold, alt_exon_fold_variable, additional_score, permute_p_threshold, gene_expression_cutoff, remove_intronic_junctions, perform_permutation_analysis, export_splice_index_values, run_MiDAS, calculate_splicing_index_p, filter_for_AS = string.split(data,'\t')
@@ -3214,6 +3379,7 @@ class OptionData:
                 global_default = string.split(global_default,'|') ### store as a list
             self._default_option = global_default
     def Option(self): return self._option
+    def VariableName(self): return self._option
     def Display(self): return self._displayed_title
     def setDisplay(self,display_title): self._displayed_title = display_title
     def DisplayObject(self): return self._display_object
@@ -3224,6 +3390,7 @@ class OptionData:
     def setNotes(self,notes): self._notes = notes
     def ArrayOptions(self): return self._array_options
     def setArrayOptions(self,array_options): self._array_options = array_options
+    def Options(self): return self._array_options
     def __repr__(self): return self.Option()+'|'+self.Display()
 
 def importUserOptions(array_type,vendor=None):
@@ -3235,7 +3402,7 @@ def importUserOptions(array_type,vendor=None):
         if array_type == 'RNASeq':
             data = string.replace(data,'probeset','junction')
             data = string.replace(data,'probe set','junction')
-            data = string.replace(data,'CEL file','BED file')
+            data = string.replace(data,'CEL file','BED, BAM, TAB or TCGA junction file')
         if vendor == 'Agilent':
             if 'CEL file' in data:
                 data = string.replace(data,'CEL file','Feature Extraction file')
@@ -3484,7 +3651,7 @@ class MainMenu:
         
         """
         ###Display the information using a messagebox
-        about = 'AltAnalyze version 2.0.8 beta.\n'
+        about = 'AltAnalyze version 2.0.9 beta.\n'
         about+= 'AltAnalyze is an open-source, freely available application covered under the\n'
         about+= 'Apache open-source license. Additional information can be found at:\n'
         about+= 'http://www.altanalyze.org\n'
@@ -3505,7 +3672,7 @@ class MainMenu:
         #can.create_image(2, 2, image=img, anchor=NW)
         
         txt.pack(expand=True, fill="both")
-        txt.insert(END, 'AltAnalyze version 2.0.8 beta.\n')
+        txt.insert(END, 'AltAnalyze version 2.0.9 beta.\n')
         txt.insert(END, 'AltAnalyze is an open-source, freely available application covered under the\n')
         txt.insert(END, 'Apache open-source license. Additional information can be found at:\n')
         txt.insert(END, "http://www.altanalyze.org\n", ('link', str(0)))
@@ -3598,7 +3765,7 @@ def formatArrayGroupsForGUI(array_group_list, category = 'GroupArrays'):
         
         if category != 'BatchArrays':
             ### Add a checkbox at the top to allow for automatic assignment of groups (e.g., Single Cell Data)
-            option='PredictGroups';displayed_title='Predict Groups from Unknown Sample Types';display_object='single-checkbox';notes='';array_options=['---']
+            option='PredictGroups';displayed_title='Run de novo cluster prediction (ICGS) to discover groups, instead';display_object='single-checkbox';notes='';array_options=['---']
             od = OptionData(option,displayed_title,display_object,notes,array_options,'')
             option_db[option] = od
             option_list[category] = [option]
@@ -3637,9 +3804,12 @@ class ExpressionFileLocationData:
         import platform; self.architecture = platform.architecture()[0]
         self.normalize_feature_exp = 'NA'
         self.normalize_gene_data = 'NA'
+        self.runKallisto =''
+    def setExpFile(self, exp_file):self._exp_file=exp_file
     def ExpFile(self): return self._exp_file
     def StatsFile(self): return self._stats_file
     def CountsFile(self):
+        import AltAnalyze
         counts_file = string.replace(self.ExpFile(),'exp.','counts.')
         file_length = AltAnalyze.verifyFileLength(counts_file)
         if file_length>0:
@@ -3658,6 +3828,7 @@ class ExpressionFileLocationData:
     def setExcludeLowExpressionExons(self, excludeNonExpExons): self.excludeNonExpExons = excludeNonExpExons
     def setNormMatrix(self,normalize_gene_data): self.normalize_gene_data = normalize_gene_data
     def setProbabilityStatistic(self,probability_statistic): self.probability_statistic = probability_statistic
+    def setFDRStatistic(self, FDR_statistic): self.FDR_statistic = FDR_statistic
     def setBatchEffectRemoval(self,batch_effects): self.batch_effects = batch_effects
     def setProducePlots(self,visualize_results): self.visualize_results = visualize_results
     def setPerformLineageProfiler(self, run_lineage_profiler): self.run_lineage_profiler = run_lineage_profiler
@@ -3690,6 +3861,7 @@ class ExpressionFileLocationData:
         except Exception: rpkm_threshold = rpkm_threshold
         self.rpkm_threshold = rpkm_threshold
     def setMarkerFinder(self,marker_finder): self.marker_finder = marker_finder
+    def FDRStatistic(self): return self.FDR_statistic
     def multiThreading(self): return self.multithreading
     def STDOUT(self): return self.stdout
     def ExonExpThreshold(self): return self.exon_exp_threshold
@@ -3718,6 +3890,8 @@ class ExpressionFileLocationData:
     def setXHybRemoval(self,xhyb): self._xhyb = xhyb
     def XHybRemoval(self): return self._xhyb
     def setExonBedBuildStatus(self,bed_build_status): self.bed_build_status = bed_build_status
+    def setRunKallisto(self, runKallisto): self.runKallisto = runKallisto
+    def RunKallisto(self): return self.runKallisto
     def setChannelToExtract(self,channel_to_extract): self.channel_to_extract = channel_to_extract
     def ExonBedBuildStatus(self): return self.bed_build_status
     def ChannelToExtract(self): return self.channel_to_extract
@@ -3938,7 +4112,7 @@ def addOnlineSpeciesDatabases(backSelect):
             selected_parameters.append('OnlineDatabases'); backSelect = 'no'
             root = Tk(); root.title('AltAnalyze: Species Databases Available for Download')
             gu = GUI(root,option_db,option_list['OnlineDatabases'],'')
-        else: gu = PreviousResults(old_options)
+        else: gu = PreviousResults(old_options); print 'alpha'
         db_version = gu.Results()['selected_version']
         exportDBversion(db_version)
         try: species1 = gu.Results()['selected_species1']
@@ -3951,8 +4125,7 @@ def addOnlineSpeciesDatabases(backSelect):
         except Exception: species_full = ''
         try: update_goelite_resources = gu.Results()['update_goelite_resources']
         except Exception: update_goelite_resources = ''
-        if species_full == 'Add Species':
-            AltAnalyze.AltAnalyzeSetup(species_full); sys.exit()
+        #if species_full == 'Add Species': AltAnalyze.AltAnalyzeSetup(species_full); sys.exit()
         new_species_list = [species1,species2,species3]; new_species_codes={}
         for species in new_species_list:
             if '---' not in species:
@@ -4071,7 +4244,7 @@ def checkForLocalArraySupport(species,array_type,specific_arraytype,run_mode):
     if array_type == 'junction' or array_type == 'RNASeq':
         try: gene_database = unique.getCurrentGeneDatabaseVersion()
         except Exception: gene_database='00'
-        if int(gene_database[-2:]) < 55:
+        if int(gene_database[-2:]) < 0:
             print_out = 'The AltAnalyze database indicated for '+array_type+' analysis\n is not supported for alternative exon analysis.\nPlease update to EnsMart55 or greater before\nproceeding.'
             if run_mode == 'GUI': IndicatorWindow(print_out,'Continue')
             else: print print_out ### Occurs in command-line mode
@@ -4128,6 +4301,7 @@ def getUserParameters(run_parameter,Multi=None):
     if run_parameter == 'yes':
         try: MainMenu()
         except Exception:
+            print traceback.format_exc()
             print_out = "\nCritical error encountered!!! This machine does not have either:\n"
             print_out += "1) Have the required Tcl/Tk components installed.\n"
             print_out += "2) Is being run from a compiled version that has critical incompatibilities your OS or hardware or\n"
@@ -4168,7 +4342,7 @@ def getUserParameters(run_parameter,Multi=None):
     run_MiDAS=no; analyze_functional_attributes=no; microRNA_prediction_method=na
     gene_expression_cutoff=na; cel_file_dir=na; input_exp_file=na; input_stats_file=na; filter_for_AS=no
     remove_intronic_junctions=na; build_exon_bedfile=no; input_cdf_file = na; bgp_file = na
-    clf_file = na; remove_xhyb = na; multiThreading = True
+    clf_file = na; remove_xhyb = na; multiThreading = True; input_fastq_dir = ''
     
     compendiumType = 'protein_coding'; compendiumPlatform = 'gene'
     calculate_splicing_index_p=no; run_goelite=no; ge_ptype = 'rawp'; probability_algorithm = na
@@ -4391,6 +4565,7 @@ def getUserParameters(run_parameter,Multi=None):
 
         option_list,option_db = importUserOptions(array_type,vendor=vendor)  ##Initially used to just get the info for species and array_type
 
+
         if array_type == "3'array":
             if species == 'Hs': compendiumPlatform = "3'array"
             for i in option_db['run_from_scratch'].ArrayOptions():
@@ -4421,6 +4596,9 @@ def getUserParameters(run_parameter,Multi=None):
                 try: option_db[option].setDefaultOption(old_options[option])
                 except Exception: null=[]
                 
+        if run_from_scratch == 'Interactive Result Viewer':
+            AltAnalyze.AltAnalyzeSetup('remoteViewer');sys.exit()
+            
         if run_from_scratch == 'Additional Analyses':
 
             if backSelect == 'no' or 'Additional Analyses' == selected_parameters[-1]:
@@ -4468,7 +4646,7 @@ def getUserParameters(run_parameter,Multi=None):
                         IndicatorWindow(print_out,'Continue')
                         
                 file_dirs = criterion_input_folder, criterion_denom_folder, main_output_folder
-                print file_dirs
+                #print file_dirs
                 ### Get GO-Elite Input Parameters
                 getUpdatedParameters(array_type,species,'Prefiltered',file_dirs)
 
@@ -4578,7 +4756,11 @@ def getUserParameters(run_parameter,Multi=None):
                     analysisType = gu.Results()['analysisType']
                     if len(altgenes_file)>0:
                         gene_symbol = importGeneList(altgenes_file) ### list of gene IDs or symbols
-                    if data_type == 'raw expression': ### Switch directories if expression
+                    if analysisType == 'Sashimi-Plot':
+                        altanalyze_results_folder = string.split(altanalyze_results_folder,'AltResults')[0]
+                        exp_file = altanalyze_results_folder
+                        gene_symbol = altgenes_file
+                    elif data_type == 'raw expression': ### Switch directories if expression
                         altanalyze_results_folder = string.replace(altanalyze_results_folder,'AltResults','ExpressionInput')
                         exp_file = getValidExpFile(altanalyze_results_folder)
                     else:
@@ -4587,11 +4769,29 @@ def getUserParameters(run_parameter,Multi=None):
                         except Exception,e:
                             print_out = "No files found in: "+altanalyze_results_folder
                             IndicatorWindow(print_out,'Continue')
+
                     if len(exp_file)>0 and len(gene_symbol)>0:
                         analysis = 'AltExonViewer'
                         values = species,array_type,exp_file,gene_symbol,show_introns,analysisType
                         StatusWindow(values,analysis) ### display an window with download status
-                        AltAnalyze.AltAnalyzeSetup((selected_parameters[:-1],user_variables)); sys.exit()
+                        if len(altgenes_file)>0 or ' ' in gene_symbol:
+                            ### Typically have a Tkinter related error
+                            if os.name == 'posix':
+                                try:
+                                    package_path = filepath('python')
+                                    mac_package_path = string.replace(package_path,'python','AltAnalyze.app/Contents/MacOS/AltAnalyze')
+                                    kill
+                                    os.system(mac_package_path+' --GUI yes');sys.exit()
+                                except Exception:   
+                                    package_path = filepath('python')
+                                    print package_path
+                                    mac_package_path = string.replace(package_path,'python','AltAnalyze.py')
+                                    mac_package_path = 'python '+mac_package_path
+                                    os.system(mac_package_path+' --GUI yes');sys.exit()
+                            else:
+                                AltAnalyze.AltAnalyzeSetup((selected_parameters[:-1],user_variables)); sys.exit()
+                        else:
+                            AltAnalyze.AltAnalyzeSetup((selected_parameters[:-1],user_variables)); sys.exit()
                     else:
                         print_out = "Either no gene or no AltResults folder selected."
                         IndicatorWindow(print_out,'Continue')
@@ -4715,7 +4915,7 @@ def getUserParameters(run_parameter,Multi=None):
                     contrast = gu.Results()['contrast']
                     if transpose == 'yes': transpose = True
                     else: transpose = False
-                    translate={'None Selected':'','Exclude Cell Cycle Effects':'excludeCellCycle','Top Correlated Only':'top','Positive Correlations Only':'positive','Perform Interative Discovery':'driver', 'Intra-Correlated Only':'IntraCorrelatedOnly'}
+                    translate={'None Selected':'','Exclude Cell Cycle Effects':'excludeCellCycle','Top Correlated Only':'top','Positive Correlations Only':'positive','Perform Iterative Discovery':'driver', 'Intra-Correlated Only':'IntraCorrelatedOnly', 'Perform Monocle':'monocle'}
                     try:
                         if 'None Selected' in HeatmapAdvanced: pass
                     except Exception: HeatmapAdvanced = ('None Selected')
@@ -4732,6 +4932,7 @@ def getUserParameters(run_parameter,Multi=None):
 
                     GeneSetSelection = string.replace(GeneSetSelection,'\n',' ')
                     GeneSetSelection = string.replace(GeneSetSelection,'\r',' ')
+                    print [GeneSetSelection, JustShowTheseIDs, GeneSelection,ClusterGOElite,normalization]
                     if GeneSetSelection != 'None Selected' or GeneSelection != '' or normalization != 'NA' or JustShowTheseIDs != '' or JustShowTheseIDs != 'None Selected':
                         gsp = GeneSelectionParameters(species,array_type,vendor)
                         if CorrelationCutoff!=None: #len(GeneSelection)>0 and 
@@ -4828,7 +5029,7 @@ def getUserParameters(run_parameter,Multi=None):
                 if backSelect == 'no' or 'InputCELFiles' == selected_parameters[-1]:
                     selected_parameters.append('InputCELFiles'); backSelect = 'no'
                     root = Tk()
-                    if array_type == 'RNASeq': root.title('AltAnalyze: Select Exon and/or Junction files to analyze'); import_file = '.bed or .tab'
+                    if array_type == 'RNASeq': root.title('AltAnalyze: Select Exon and/or Junction files to analyze'); import_file = 'BED, BAM, TAB or TCGA'
                     elif vendor == 'Agilent': root.title('AltAnalyze: Select Agilent Feature Extraction text files to analyze'); import_file = '.txt'
                     else: root.title('AltAnalyze: Select CEL files for APT'); import_file = '.CEL'
                     gu = GUI(root,option_db,option_list['InputCELFiles'],'')
@@ -4846,6 +5047,9 @@ def getUserParameters(run_parameter,Multi=None):
                     try: normalize_feature_exp = 'RPKM'
                     except Exception: pass
                 except KeyError: build_exon_bedfile = 'no'
+                try:
+                    input_fastq_dir = gu.Results()['input_fastq_dir']
+                except Exception: pass
                 try: channel_to_extract = gu.Results()['channel_to_extract']
                 except Exception: channel_to_extract = 'no'
                 if build_exon_bedfile == 'yes':
@@ -4855,21 +5059,34 @@ def getUserParameters(run_parameter,Multi=None):
                 if len(dataset_name)<1:
                     print_out = "Please provide a name for the dataset before proceeding."
                     IndicatorWindow(print_out,'Continue')
-                elif 'input_cel_dir' in gu.Results():
-                    cel_file_dir = gu.Results()['input_cel_dir']
-                    cel_files,cel_files_fn=identifyCELfiles(cel_file_dir,array_type,vendor)
-                    try: output_dir = gu.Results()['output_CEL_dir']
-                    except KeyError: output_dir = cel_file_dir
-                    if len(output_dir)==0: output_dir = cel_file_dir
-                    if len(cel_files)>0: assinged = 'yes' ### CEL files are present in this directory
+                elif 'input_cel_dir' in gu.Results() or 'input_fastq_dir' in gu.Results():
+                    if len(input_fastq_dir)>0:
+                        import RNASeq
+                        cel_files = RNASeq.runKallisto(species,'',input_fastq_dir,input_fastq_dir,returnSampleNames=True)
+                        try: output_dir = gu.Results()['output_CEL_dir']
+                        except KeyError: output_dir = input_fastq_dir
+                        option_db['perform_alt_analysis'].setArrayOptions(['NA'])
+                        option_db['exon_exp_threshold'].setArrayOptions(['NA'])
+                        option_db['exon_rpkm_threshold'].setArrayOptions(['NA'])
+                        option_db['expression_threshold'].setArrayOptions(['NA'])
+                        option_db['gene_exp_threshold'].setArrayOptions(['NA'])
+                        assinged = 'yes'
                     else:
-                        print_out = "No valid "+import_file+" files were found in the directory\n"+cel_file_dir+"\nPlease verify and try again."
-                        IndicatorWindow(print_out,'Continue')
+                        cel_file_dir = gu.Results()['input_cel_dir']
+                        cel_files,cel_files_fn=identifyCELfiles(cel_file_dir,array_type,vendor)
+                        try: output_dir = gu.Results()['output_CEL_dir']
+                        except KeyError: output_dir = cel_file_dir
+                        if len(output_dir)==0: output_dir = cel_file_dir
+                        if len(cel_files)>0: assinged = 'yes' ### CEL files are present in this directory
+                        else:
+                            print_out = "No valid "+import_file+" files were found in the directory\n"+cel_file_dir+"\nPlease verify and try again."
+                            IndicatorWindow(print_out,'Continue')
+                    
                 else:
                     print_out = "The directory containing "+import_file+" files has not\nbeen assigned! Select a directory before proceeding."
                     IndicatorWindow(print_out,'Continue')
-                    
-            if array_type != 'RNASeq' and vendor != 'Agilent':
+
+            if array_type != 'RNASeq' and vendor != 'Agilent' and len(input_fastq_dir)==0:
                 ### Specific to Affymetrix CEL files
                 cel_file_list_dir = exportCELFileList(cel_files_fn,cel_file_dir)
                 """Determine if Library and Annotations for the array exist, if not, download or prompt for selection"""
@@ -4940,7 +5157,7 @@ def getUserParameters(run_parameter,Multi=None):
                 """Identify and copy over any Libary or Annotation files on the computer"""                    
                 if (len(input_cdf_file)==0 and len(annotation_dir) == 0) and backSelect == 'no':
                     ### Note: above line used to be "or" between the input_cdf_file and annotation_dir
-                    ### this was discontinued in version 2.0.8 since the annotation file is no longer needed
+                    ### this was discontinued in version 2.0.9 since the annotation file is no longer needed
                     ### unless the array type is not in the GO-elite database
                     assinged = 'no'
                     while assinged == 'no': ### Assigned indicates whether or not the CEL directory and CDF files are defined
@@ -5031,6 +5248,25 @@ def getUserParameters(run_parameter,Multi=None):
                                     except Exception: continue ### Occurs if the file is open... not critical to worry about       
 
         if run_from_scratch == 'Process Expression file':
+            if array_type != 'RNASeq':
+                ### This is the new option for expression filtering of non-RNASeq classified data
+                try:
+                    #print option_db['rpkm_threshold'].DefaultOption()
+                    if 'rpkm_threshold' in option_db:
+                        option_db['rpkm_threshold'].setArrayOptions('0')
+                        if option_db['rpkm_threshold'].DefaultOption() == ['NA']:
+                            option_db['rpkm_threshold'].setDefaultOption('0')
+                        option_db['rpkm_threshold'].setDisplay('Remove genes expressed below (non-log)')
+                    else:
+                        option_db['rpkm_threshold'].setArrayOptions('0')
+                        option_db['rpkm_threshold'].setDefaultOption('0')
+                        option_db['rpkm_threshold'].setDisplay('Remove genes expressed below (non-log)')                     
+                except Exception:
+                    option_db['rpkm_threshold'].setArrayOptions('0')
+                    option_db['rpkm_threshold'].setDefaultOption('0')
+                    option_db['rpkm_threshold'].setDisplay('Remove genes expressed below (non-log)') 
+
+                
             status = 'repeat'
             while status == 'repeat':
                 if backSelect == 'no' or 'InputExpFiles' == selected_parameters[-1]:
@@ -5103,6 +5339,11 @@ def getUserParameters(run_parameter,Multi=None):
                         root = Tk(); root.title('AltAnalyze: Expression Analysis Parameters')
                         gu = GUI(root,option_db,option_list['GeneExpression'],expr_defaults)
                     else: gu = PreviousResults(old_options)
+                    try: rpkm_threshold = float(gu.Results()['rpkm_threshold'])
+                    except Exception:
+                        if array_type == 'RNASeq': rpkm_threshold = 1
+                        else: rpkm_threshold = 'NA'
+
                     if array_type != "3'array":          
                         try: dabg_p = gu.Results()['dabg_p']
                         except Exception:
@@ -5120,16 +5361,13 @@ def getUserParameters(run_parameter,Multi=None):
                         except Exception:
                             if array_type == 'RNASeq': exon_exp_threshold = 1
                             else: exon_exp_threshold = 'NA'
-                        try: rpkm_threshold = gu.Results()['rpkm_threshold']
-                        except Exception:
-                            if array_type == 'RNASeq': rpkm_threshold = 1
-                            else: rpkm_threshold = 'NA'
                         run_from_scratch = gu.Results()['run_from_scratch']
                         try: expression_threshold = gu.Results()['expression_threshold']
                         except Exception:
                             if array_type == 'RNASeq': expression_threshold = 0
                             else: expression_threshold = 'NA'
-                        perform_alt_analysis = gu.Results()['perform_alt_analysis']
+                        try: perform_alt_analysis = gu.Results()['perform_alt_analysis']
+                        except Exception: perform_alt_analysis = 'just expression'
                         try: analyze_as_groups = gu.Results()['analyze_as_groups']
                         except Exception: analyze_as_groups = ''
                         if perform_alt_analysis == 'just expression': perform_alt_analysis = 'expression'
@@ -5154,6 +5392,8 @@ def getUserParameters(run_parameter,Multi=None):
                     visualize_results = gu.Results()['visualize_results']
                     run_lineage_profiler = gu.Results()['run_lineage_profiler']
                     probability_algorithm = gu.Results()['probability_algorithm']
+                    try: FDR_statistic = gu.Results()['FDR_statistic']
+                    except Exception: pass
                     try: batch_effects = gu.Results()['batch_effects']
                     except Exception: batch_effects = 'NA'
                     try: marker_finder = gu.Results()['marker_finder']
@@ -5168,8 +5408,10 @@ def getUserParameters(run_parameter,Multi=None):
                         except Exception: passed = 'no'; print_out+= 'DABG p-value cutoff '
                     if array_type != "3'array":   
                         try:
-                            expression_threshold = float(expression_threshold)
-                            if expression_threshold<1: passed = 'no'; print_out+= 'expression threshold '
+                            try: rpkm_threshold = float(rpkm_threshold)
+                            except Exception:
+                                expression_threshold = float(expression_threshold)
+                                if expression_threshold<1: passed = 'no'; print_out+= 'expression threshold '
                         except Exception: passed = 'no'; print_out+= 'expression threshold '   
                     if array_type == 'RNASeq':
                         try:
@@ -5707,6 +5949,10 @@ def getUserParameters(run_parameter,Multi=None):
             button_text = 'Download Annotations'; url = 'http://www.affymetrix.com/support/technical/byproduct.affx?cat=arrays'
             IndicatorLinkOutWindow(print_out,button_text,url)
             """
+            
+    if len(input_fastq_dir)>0:
+        array_type = "3'array"
+        vendor = 'other:Ensembl' ### Ensembl linked system name
     if microRNA_prediction_method == 'two or more': microRNA_prediction_method = 'multiple'
     else: microRNA_prediction_method = 'any'
 
@@ -5738,6 +5984,7 @@ def getUserParameters(run_parameter,Multi=None):
             fl.setChannelToExtract(channel_to_extract)
         elif run_from_scratch == 'Process RNA-seq reads':
             fl.setCELFileDir(cel_file_dir); fl.setOutputDir(output_dir); fl.setExonBedBuildStatus(build_exon_bedfile)
+            fl.setRunKallisto(input_fastq_dir);
         if array_type != 'gene' and array_type != "3'array":
             compendiumPlatform = 'exon'
         fl = exp_file_location_db[dataset]; fl.setRootDir(parent_dir)
@@ -5751,6 +5998,8 @@ def getUserParameters(run_parameter,Multi=None):
         fl.setCompendiumType(compendiumType)
         fl.setCompendiumPlatform(compendiumPlatform)
         fl.setVendor(vendor)
+        try: fl.setFDRStatistic(FDR_statistic)
+        except Exception: pass
         try: fl.setExcludeLowExpressionExons(excludeNonExpExons)
         except Exception: fl.setExcludeLowExpressionExons(True)
         try: fl.setPredictGroups(predictGroups)
@@ -5761,6 +6010,10 @@ def getUserParameters(run_parameter,Multi=None):
         if run_from_scratch == 'Process Expression file':
             fl.setRootDir(output_dir) ### When the data is not primary array data files, allow for option selection of the output directory
             fl.setOutputDir(output_dir)
+        try: fl.setRPKMThreshold(rpkm_threshold)
+        except Exception: pass
+        try: fl.setGeneExpThreshold(gene_exp_threshold)
+        except Exception: pass
     if array_type == 'RNASeq': ### Post version 2.0, add variables in fl rather than below
         fl.setRPKMThreshold(rpkm_threshold)
         fl.setExonExpThreshold(exon_exp_threshold)
@@ -5780,7 +6033,7 @@ def getUserParameters(run_parameter,Multi=None):
         option_db['GeneSetSelectionPredict'].setArrayOptions(['None Selected']+supported_geneset_types)
         option_db['PathwaySelectionPredict'].setArrayOptions(['None Selected'])
         #option_db['PathwaySelection'].setArrayOptions(supported_genesets)
-        
+
         status = 'repeat'
         while status == 'repeat':
             root = Tk()
@@ -5794,6 +6047,12 @@ def getUserParameters(run_parameter,Multi=None):
         import RNASeq  
         expFile = fl.ExpFile()
         mlp_instance = fl.MLP()
+        
+        global logfile
+        root_dir = export.findParentDir(expFile)
+        root_dir = string.replace(root_dir,'/ExpressionInput','')
+        time_stamp = AltAnalyze.timestamp()    
+        logfile = filepath(root_dir+'AltAnalyze_report-'+time_stamp+'.log')
         
         count = verifyFileLength(expFile[:-4]+'-steady-state.txt')
         if count>1:
@@ -5996,10 +6255,13 @@ class GeneSelectionParameters:
         else:
             return False
     def ExcludeCellCycle(self):
-        if self.excludeCellCycle == True or self.excludeCellCycle == 'yes':
+        if self.excludeCellCycle == 'stringent' or self.excludeCellCycle == 'strict':
+            return 'strict'  ### Also includes removing drivers correlated to any cell cycle genes, not just in the training set
+        elif self.excludeCellCycle == True or self.excludeCellCycle != 'no':
             return True
         else:
             return False
+        
     def ColumnMetric(self): return self.column_metric
     def ColumnMethod(self): return self.column_method
     def MinEvents(self):
@@ -6100,6 +6362,18 @@ def downloadInteractionDBs(species,windowType):
     StatusWindow(values,analysis,windowType=windowType) ### open in a TopLevel TK window (don't close current option selection menu)
     
 if __name__ == '__main__':
+    dir = '/Users/saljh8/Desktop/dataAnalysis/FuKun/AltResults/Clustering/Combined-junction-exon-evidence.txt'
+    a = exportJunctionList(dir,limit=50)
+    print a;sys.exit()
+    root = Tk()
+    import Config.RemoteViewer as cr
+    currentDirectory = str(os.getcwd())
+    os.chdir(currentDirectory+'/Config') 
+    app = wx.PySimpleApp(False)
+    fr = cr.Main(parent=None,id=1)
+    fr.Show()
+    app.MainLoop()
+    os.chdir(currentDirectory)
     try:
         import multiprocessing as mlp
         mlp.freeze_support()
@@ -6108,5 +6382,6 @@ if __name__ == '__main__':
         mlp=None
 
     #getUpdatedParameters(array_type,species,run_from_scratch,file_dirs)    
-    a = getUserParameters('yes'); print a; sys.exit()
+    a = getUserParameters('yes')
+
     

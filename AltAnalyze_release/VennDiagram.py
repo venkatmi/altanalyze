@@ -7,6 +7,10 @@ try:
         import matplotlib
         matplotlib.rcParams['backend'] = 'TkAgg'
         import matplotlib.pyplot as pylab
+        matplotlib.rcParams['axes.linewidth'] = 0.5
+        matplotlib.rcParams['pdf.fonttype'] = 42
+        matplotlib.rcParams['font.family'] = 'sans-serif'
+        matplotlib.rcParams['font.sans-serif'] = 'Arial'
 except Exception:
     None
     
@@ -94,7 +98,9 @@ Out[12]:
             print set_collections[i]"""
     labels={}
     if fill == "number":
-        for k in set_collections: labels[k] = len(set_collections[k])
+        for k in set_collections:
+            #labels[k] = len(set_collections[k])
+            labels[k] = set_collections[k]
     elif fill == "logic":
         for k in set_collections: labels[k] = k
     elif fill == "both":
@@ -107,7 +113,9 @@ Out[12]:
 
 #--------------------------------------------------------------------
 def venn2(data=None, names=None, fill="number", show_names=True, show_plot=True, outputDir=False, **kwds):
-
+    global coordinates
+    coordinates={}
+    
     if (data is None) or len(data) != 2:
         raise Exception("length of data should be 2!")
     if (names is None) or (len(names) != 2):
@@ -145,10 +153,10 @@ def venn2(data=None, names=None, fill="number", show_names=True, show_plot=True,
 
     ## draw text
     #1
-    pylab.text(x1-r/2, y1, labels['10'], **alignment)
-    pylab.text(x2+r/2, y2, labels['01'], **alignment)
+    pylab.text(round(x1-r/2), round(y1), len(labels['10']),fontsize=16, picker=True, **alignment); coordinates[round(x1-r/2), round(y1)]=labels['10']
+    pylab.text(round(x2+r/2), round(y2), len(labels['01']),fontsize=16, picker=True, **alignment); coordinates[round(x2+r/2), round(y2)]=labels['01']
     # 2
-    pylab.text((x1+x2)/2, y1, labels['11'], **alignment)
+    pylab.text(round((x1+x2)/2), round(y1), len(labels['11']),fontsize=16, picker=True, **alignment); coordinates[round((x1+x2)/2), round(y1)]=labels['11']
     # names of different groups
     if show_names:
         pylab.text(x1, y1-1.2*r, names[0], fontsize=16, **alignment)
@@ -156,9 +164,9 @@ def venn2(data=None, names=None, fill="number", show_names=True, show_plot=True,
 
     leg = ax.legend(names, loc='best', fancybox=True)
     leg.get_frame().set_alpha(0.5)
+    
+    fig.canvas.mpl_connect('pick_event', onpick)
 
-    if show_plot:
-        pylab.show()
     try:
         if outputDir!=False:
             filename = outputDir+'/%s.pdf' % venn_export
@@ -167,6 +175,10 @@ def venn2(data=None, names=None, fill="number", show_names=True, show_plot=True,
             pylab.savefig(filename, dpi=100) #,dpi=200
     except Exception:
         print 'Image file not saved...'
+        
+    if show_plot:
+        pylab.show()
+
     try:
         import gc
         fig.clf()
@@ -177,13 +189,15 @@ def venn2(data=None, names=None, fill="number", show_names=True, show_plot=True,
 
 #--------------------------------------------------------------------
 def venn3(data=None, names=None, fill="number", show_names=True, show_plot=True, outputDir=False, **kwds):
-
+    global coordinates
+    coordinates={}
     if (data is None) or len(data) != 3:
         raise Exception("length of data should be 3!")
     if (names is None) or (len(names) != 3):
         names = ("set 1", "set 2", "set 3")
-
+    
     labels = get_labels(data, fill=fill)
+    
     # set figure size
     if 'figsize' in kwds and len(kwds['figsize']) == 2:
         # if 'figsize' is in kwds, and it is a list or tuple with length of 2
@@ -216,15 +230,15 @@ def venn3(data=None, names=None, fill="number", show_names=True, show_plot=True,
 
     ## draw text
     # 1
-    pylab.text(x1-r/2, y1-r/2, labels['100'], **alignment)
-    pylab.text(x2+r/2, y2-r/2, labels['010'], **alignment)
-    pylab.text((x1+x2)/2, y3+r/2, labels['001'], **alignment)
+    pylab.text(x1-r/2, round(y1-r/2), len(labels['100']),fontsize=16, picker=True, **alignment); coordinates[x1-r/2, round(y1-r/2)]=labels['100']
+    pylab.text(x2+r/2, round(y2-r/2), len(labels['010']), fontsize=16, picker=True, **alignment); coordinates[x2+r/2, round(y2-r/2)]=labels['010']
+    pylab.text((x1+x2)/2, round(y3+r/2), len(labels['001']), fontsize=16, picker=True, **alignment); coordinates[(x1+x2)/2, round(y3+r/2)]=labels['001']
     # 2
-    pylab.text((x1+x2)/2, y1-r/2, labels['110'], **alignment)
-    pylab.text(x1, y1+2*r/3, labels['101'], **alignment)
-    pylab.text(x2, y2+2*r/3, labels['011'], **alignment)
+    pylab.text((x1+x2)/2, round(y1-r/2), len(labels['110']),fontsize=16,picker=True, **alignment); coordinates[(x1+x2)/2, round(y1-r/2)]=labels['110']
+    pylab.text(x1, round(y1+2*r/3), len(labels['101']),fontsize=16,picker=True, **alignment); coordinates[x1, round(y1+2*r/3)]=labels['101']
+    pylab.text(x2, round(y2+2*r/3), len(labels['011']),fontsize=16,picker=True, **alignment); coordinates[x2, round(y2+2*r/3)]=labels['011']
     # 3
-    pylab.text((x1+x2)/2, y1+r/3, labels['111'], **alignment)
+    pylab.text((x1+x2)/2, round(y1+r/3),len(labels['111']), fontsize=16,picker=True, **alignment); coordinates[(x1+x2)/2, round(y1+r/3)]=labels['111']
     # names of different groups
     if show_names:
         pylab.text(x1-r, y1-r, names[0], fontsize=16, **alignment)
@@ -234,8 +248,8 @@ def venn3(data=None, names=None, fill="number", show_names=True, show_plot=True,
     leg = ax.legend(names, loc='best', fancybox=True)
     leg.get_frame().set_alpha(0.5)
 
-    if show_plot:
-        pylab.show()
+    fig.canvas.mpl_connect('pick_event', onpick)
+    
     try:
         if outputDir!=False:
             filename = outputDir+'/%s.pdf' % venn_export
@@ -244,6 +258,10 @@ def venn3(data=None, names=None, fill="number", show_names=True, show_plot=True,
             pylab.savefig(filename, dpi=100) #,dpi=200
     except Exception:
         print 'Image file not saved...'
+        
+    if show_plot:
+        pylab.show()
+
     try:
         import gc
         fig.clf()
@@ -254,7 +272,8 @@ def venn3(data=None, names=None, fill="number", show_names=True, show_plot=True,
 
 #--------------------------------------------------------------------
 def venn4(data=None, names=None, fill="number", show_names=True, show_plot=True, outputDir=False, **kwds):
-
+    global coordinates
+    coordinates={}
     if (data is None) or len(data) != 4:
         raise Exception("length of data should be 4!")
     if (names is None) or (len(names) != 4):
@@ -292,24 +311,24 @@ def venn4(data=None, names=None, fill="number", show_names=True, show_plot=True,
 
     ### draw text
     # 1
-    pylab.text(120, 200, labels['1000'], **alignment)
-    pylab.text(280, 200, labels['0100'], **alignment)
-    pylab.text(155, 250, labels['0010'], **alignment)
-    pylab.text(245, 250, labels['0001'], **alignment)
+    pylab.text(120, 200, len(labels['1000']),fontsize=16, picker=True, **alignment);coordinates[120, 200]=labels['1000']
+    pylab.text(280, 200, len(labels['0100']),fontsize=16, picker=True, **alignment);coordinates[280, 200]=labels['0100']
+    pylab.text(155, 250, len(labels['0010']),fontsize=16, picker=True, **alignment);coordinates[155, 250]=labels['0010']
+    pylab.text(245, 250, len(labels['0001']),fontsize=16, picker=True, **alignment);coordinates[245, 250]=labels['0001']
     # 2
-    pylab.text(200, 115, labels['1100'], **alignment)
-    pylab.text(140, 225, labels['1010'], **alignment)
-    pylab.text(145, 155, labels['1001'], **alignment)
-    pylab.text(255, 155, labels['0110'], **alignment)
-    pylab.text(260, 225, labels['0101'], **alignment)
-    pylab.text(200, 240, labels['0011'], **alignment)
+    pylab.text(200, 115, len(labels['1100']),fontsize=16, picker=True, **alignment);coordinates[200, 115]=labels['1100']
+    pylab.text(140, 225, len(labels['1010']),fontsize=16, picker=True, **alignment);coordinates[140, 225]=labels['1010']
+    pylab.text(145, 155, len(labels['1001']),fontsize=16, picker=True, **alignment);coordinates[145, 155]=labels['1001']
+    pylab.text(255, 155, len(labels['0110']),fontsize=16, picker=True, **alignment);coordinates[255, 155]=labels['0110']
+    pylab.text(260, 225, len(labels['0101']),fontsize=16, picker=True, **alignment);coordinates[260, 225]=labels['0101']
+    pylab.text(200, 240, len(labels['0011']),fontsize=16, picker=True, **alignment);coordinates[200, 240]=labels['0011']
     # 3
-    pylab.text(235, 205, labels['0111'], **alignment)
-    pylab.text(165, 205, labels['1011'], **alignment)
-    pylab.text(225, 135, labels['1101'], **alignment)
-    pylab.text(175, 135, labels['1110'], **alignment)
+    pylab.text(235, 205, len(labels['0111']),fontsize=16, picker=True, **alignment);coordinates[235, 205]=labels['0111']
+    pylab.text(165, 205, len(labels['1011']),fontsize=16, picker=True, **alignment);coordinates[165, 205]=labels['1011']
+    pylab.text(225, 135, len(labels['1101']),fontsize=16, picker=True, **alignment);coordinates[225, 135]=labels['1101']
+    pylab.text(175, 135, len(labels['1110']),fontsize=16, picker=True, **alignment);coordinates[175, 135]=labels['1110']
     # 4
-    pylab.text(200, 175, labels['1111'], **alignment)
+    pylab.text(200, 175, len(labels['1111']),fontsize=16, picker=True, **alignment);coordinates[200, 175]=labels['1111']
     # names of different groups
     if show_names:
         pylab.text(110, 110, names[0], fontsize=16, **alignment)
@@ -320,8 +339,8 @@ def venn4(data=None, names=None, fill="number", show_names=True, show_plot=True,
     leg = ax.legend(loc='best', fancybox=True)
     leg.get_frame().set_alpha(0.5)
 
-    if show_plot:
-        pylab.show()
+    fig.canvas.mpl_connect('pick_event', onpick)
+    
     try:
         if outputDir!=False:
             filename = outputDir+'/%s.pdf' % venn_export
@@ -330,6 +349,10 @@ def venn4(data=None, names=None, fill="number", show_names=True, show_plot=True,
             pylab.savefig(filename, dpi=100) #,dpi=200
     except Exception:
         print 'Image file not saved...'
+        
+    if show_plot:
+        pylab.show()
+
     try:
         import gc
         fig.clf()
@@ -338,6 +361,23 @@ def venn4(data=None, names=None, fill="number", show_names=True, show_plot=True,
     except Exception:
         pass
 #--------------------------------------------------------------------
+
+def onpick(event):
+        text = event.artist
+        x = int(event.mouseevent.xdata)
+        y = int(event.mouseevent.ydata)
+        #print [text.get_text()]
+  
+        if (x,y) in coordinates:
+            #print text.get_text()
+            import TableViewer
+            header = ['Associated Genes']
+            tuple_list = []
+            
+            for gene in coordinates[(x,y)]:
+                tuple_list.append([(gene)])
+            TableViewer.viewTable(text.get_text(),header,tuple_list) #"""
+            
 def test():
     """ a test function to show basic usage of venn()"""
 
@@ -466,8 +506,6 @@ def SimpleMatplotVenn(names,data,outputDir=False,display=True):
         
     pylab.title("Overlap Weighted Venn Diagram",fontsize=24)
 
-    if display:
-        pylab.show()
     try:
         if outputDir!=False:
             filename = outputDir+'/%s.pdf' % venn_export_weighted
@@ -476,6 +514,10 @@ def SimpleMatplotVenn(names,data,outputDir=False,display=True):
             pylab.savefig(filename, dpi=100) #,dpi=200
     except Exception:
         print 'Image file not saved...'
+        
+    if display:
+        pylab.show()
+
     try:
         import gc
         fig.clf()

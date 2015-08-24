@@ -1028,6 +1028,7 @@ def importSpeciesData():
             species_list.append(species)
             species_codes[species] = abrev
             species_names[abrev] = species
+            
     
 def testFileLength(fn):
     x=0
@@ -1393,8 +1394,10 @@ def runGOElite(mod):
       ### This exception was added in version 1.2 and replaces the code in OBO_import.buildNestedOntologyTree which resets the OBO version to 0/0/00 and re-runs (see unlisted_variable = kill)
       print_out = "Unknown error encountered during data processing.\nPlease see logfile in:\n\n"+log_file+"\nand report to genmapp@gladstone.ucsf.edu."
       if root != None:
-        try: UI.WarningWindow(print_out,'Error Encountered!'); root.destroy()
-        except Exception: print print_out
+        program,program_dir = unique.whatProgramIsThis()
+        if program!= 'AltAnalyze':
+            try: UI.WarningWindow(print_out,'Error Encountered!'); root.destroy()
+            except Exception: print print_out
       """
       if os.name == 'nt':
             try: os.startfile('"'+log_file+'"')
@@ -1882,7 +1885,7 @@ def remoteAnalysis(variables,run_type,Multi=None):
     global sort_only_by_zscore; global permutations; global species; global root; global custom_sets_folder
     global run_mappfinder; global criterion_input_folder; global criterion_denom_folder; global main_output_folder
     global summary_data_db; summary_data_db = {}; global analysis_method; global log_file; global mod
-    global resources_to_analyze; global returnPathways; global imageType; imageType = 'pdf'
+    global resources_to_analyze; global returnPathways; global imageType; imageType = 'both'
     global commandLineMode; commandLineMode = 'no'; global enrichment_type; enrichment_type = 'ORA'
     global mlp; mlp = Multi
     
@@ -2079,7 +2082,7 @@ def commandLineRun():
     global run_mappfinder; global criterion_input_folder; global criterion_denom_folder; global main_output_folder; global custom_sets_folder
     global log_file; global summary_data_db; summary_data_db = {}; global analysis_method; global returnPathways; global mod; global imageType
     global commandLineMode; commandLineMode = 'yes'; global enrichment_type
-
+    
     ###optional
     permutations = 2000; filter_method = 'z-score'; mod = 'Ensembl'; z_threshold = 1.96; enrichment_type = 'ORA'
     p_val_threshold = 0.05; change_threshold = 3; main_output_folder = ''; resources_to_analyze = 'all'
@@ -2125,7 +2128,7 @@ def commandLineRun():
     if '--help' in input_var or '--h' in input_var:
         displayHelp()
     if '--version' in input_var or '--v' in input_var:
-        print 'GO-Elite version 1.2.6 (http://genmapp.org/go_elite)'; sys.exit()
+        print 'GO-Elite version 1.2.6 (http://genmapp.org/go_elite)'
         
     try:
         options, remainder = getopt.getopt(input_var,'', ['species=', 'mod=','permutations=',
@@ -2196,6 +2199,7 @@ def commandLineRun():
     python GO_Elite.py --update metabolites --version 72 --species Hs --force no
     ython GO_Elite.py --update Affymetrix --update WikiPathways --species Hs --replaceDB no --force no
     """
+
     if len(resources)>1: resources_to_analyze = resources
     elif len(resources)>0: resources_to_analyze = resources[0]
     
@@ -2284,12 +2288,12 @@ def commandLineRun():
                         species_array_db[species_name,version] = supported_arrays
         print 'len(species_array_db)',len(species_array_db)
         if len(species_array_db)>0: UI.exportArrayVersionInfo(species_array_db)
-        
+    
     if replaceDB == 'yes': incorporate_previous = 'no'
     if update_dbs == 'yes' and ((species_code == None and species_full == None) and (update_method != ['Ontology'])) and update_method != ['metabolites']:
         print '\nInsufficient flags entered (requires --species or --speciesfull)'; sys.exit()
     elif (update_dbs == 'yes' or buildNested == 'yes') and (species_code != None or species_full != None or update_method == ['Ontology']):
-
+    
         import BuildAffymetrixAssociations; import update; import EnsemblSQL; import UI
         file_location_defaults = UI.importDefaultFileLocations()
         speciesData(); species_codes = UI.importSpeciesInfo(); species_code_list=[]
@@ -2297,7 +2301,7 @@ def commandLineRun():
             UI.remoteSpeciesInfo('no'); species_codes = UI.importSpeciesInfo() ### Gets the information from the backup version
     
         if ensembl_version != 'current' and 'release-' not in ensembl_version and 'EnsMart' not in ensembl_version:
-            if 'Plant' not in ensembl_version:
+            if 'Plant' not in ensembl_version and 'Fungi' not in ensembl_version:
                 try: version_int = int(ensembl_version); ensembl_version = 'release-'+ensembl_version
                 except ValueError: print 'The Ensembl version number is not formatted corrected. Please indicate the desired version number to use (e.g., "55").'; sys.exit()                
         
@@ -2748,8 +2752,10 @@ if __name__ == '__main__':
                 
                 print_out = "Unknown error encountered during data processing.\nPlease see logfile in:\n\n"+log_file+"\nand report to genmapp@gladstone.ucsf.edu."
                 if use_Tkinter == 'yes':
-                    try: UI.WarningWindow(print_out,'Error Encountered!'); root.destroy()
-                    except Exception: print print_out
+                    program,program_dir = unique.whatProgramIsThis()
+                    if program!= 'AltAnalyze':
+                        try: UI.WarningWindow(print_out,'Error Encountered!'); root.destroy()
+                        except Exception: print print_out
                 else: print print_out
                 log_report.close()
                 if len(log_file)>0:

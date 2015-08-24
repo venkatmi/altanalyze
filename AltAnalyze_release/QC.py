@@ -390,8 +390,9 @@ def importTableEntries(filename,filter_db,ensembl_exon_db,gene_db,root_dir,trans
         try: pylab.close()
         except Exception: pass
         if successfully_output_genes>0:
-            try: print 'Gene graphs exported to ExonPlots...'
-            except Exception: pass
+            #try: print 'Gene graphs exported to ExonPlots...'
+            #except Exception: pass
+            pass
         else:
             print '\nWARNING!!!! No genes with associated alternative exon evidence found\n'; forceNoExonExpError
         try:
@@ -506,7 +507,7 @@ def plotExonExpression(fig,matrix,stdev_matrix,row_headers,column_headers,datase
     """ Display exon-level expression for splicing-index, RPKMs or Affymetrix probeset intensities """
     #print len(matrix);sys.exit()
     ax = fig.add_subplot(111)
-    print gene_symbol
+    print '.',
     if 'exp.' in dataset_name:
         datatype = '-RawExonExp'
         pylab.ylabel('Exon Expression (log2)')
@@ -932,7 +933,8 @@ def displayExpressionGraph(species,Platform,exp_file,gene,transpose,display=True
                 gene = annotate_db[gene].GeneID()
             gene_db[gene]=gene_symbol
         except Exception:
-            print gene, 'not in database'
+            #if len(gene)>0: print gene, 'not in database'
+            pass
         
     if len(gene_db)==0:
         force_no_gene_found_error
@@ -955,6 +957,7 @@ def displayExpressionGraph(species,Platform,exp_file,gene,transpose,display=True
     filter_db = {}
     for gene in ensembl_exon_db:
         ensembl_exon_db[gene].sort()
+        
         for (index,ed,id) in ensembl_exon_db[gene]:
             filter_db[id] = []
             

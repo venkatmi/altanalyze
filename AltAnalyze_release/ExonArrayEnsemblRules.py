@@ -896,6 +896,7 @@ def getDirectoryFiles(dir):
 
 def reimportEnsemblProbesets(filename,probe_db=None,cs_db=None):
     fn=filepath(filename); x = 0
+    #print [fn]
     if probe_db != None:
         probe_association_db=probe_db; constitutive_db=cs_db; constitutive_original_db={} ### grab these from a separate file
     else:
@@ -907,7 +908,8 @@ def reimportEnsemblProbesets(filename,probe_db=None,cs_db=None):
         else:
             #t = string.split(line,'\t')
             #probeset_id=t[0];ensembl_gene_id=t[1];chr=t[2];strand=t[3];start=t[4];stop=t[5];exon_class=t[6]
-            probeset_id, exon_id, ensembl_gene_id, transcript_cluster_id, chromosome, strand, probeset_start, probeset_stop, affy_class, constitutive_probeset, ens_exon_ids, exon_annotations,regionid,r_start,r_stop,splice_event,splice_junctions = string.split(line,'\t')
+            try: probeset_id, exon_id, ensembl_gene_id, transcript_cluster_id, chromosome, strand, probeset_start, probeset_stop, affy_class, constitutive_probeset, ens_exon_ids, exon_annotations,regionid,r_start,r_stop,splice_event,splice_junctions = string.split(data,'\t')
+            except Exception: print data;kill
             probe_data = ensembl_gene_id,transcript_cluster_id,exon_id,ens_exon_ids,affy_class#,exon_annotations,constitutive_probeset
             proceed = 'yes'
             """
@@ -956,18 +958,32 @@ def reimportEnsemblProbesetsForSeqExtraction(filename,filter_type,filter_db):
                 probe_data = probeset_id, strand, probeset_start, probeset_stop
                 probe_data = probe_data,ed
                 proceed = 'yes'
+            elif filter_type == 'only-junctions':
+                if '-' in exon_id and '.' in exon_id:
+                    try: location = chr+':'+string.split(r_start,'|')[1]+'-'+string.split(r_stop,'|')[0]
+                    except Exception: location = chr+':'+probeset_start+'-'+probeset_stop
+                    try: pos = [int(string.split(r_start,'|')[1]),int(string.split(r_stop,'|')[0])]
+                    except Exception:
+                        try: pos = [int(r_start),int(r_stop)]
+                        except Exception: pos = [int(probeset_start),int(probeset_stop)]
+                    probe_data = probeset_id, pos,location
+                    proceed = 'yes'
+                else: proceed = 'no'
             elif filter_type == 'gene':
                 if ensembl_gene_id in filter_db: proceed = 'yes'
                 else: proceed = 'no'
             elif filter_type == 'gene-probesets': ### get all probesets for a query gene
                 if ensembl_gene_id in filter_db:
                     proceed = 'yes'
-                    exon_id = string.replace(exon_id,'-','.')
-                    block,region = string.split(exon_id[1:],'.')
-                    if '_' in region:
-                        region = string.split(region,'_')[0]
-                    ed = EnsemblImport.ProbesetAnnotation(exon_id, constitutive_probeset, regionid, splice_event, splice_junctions,r_start,r_stop)
-                    probe_data = (int(block),int(region)),ed,probeset_id ### sort by exon number            
+                    if '-' in exon_id and '.' in exon_id: proceed = 'no' #junction
+                    else:
+                        exon_id = string.replace(exon_id,'-','.')
+                        try: block,region = string.split(exon_id[1:],'.')
+                        except Exception: print original_exon_id;sys.exit()
+                        if '_' in region:
+                            region = string.split(region,'_')[0]
+                        ed = EnsemblImport.ProbesetAnnotation(exon_id, constitutive_probeset, regionid, splice_event, splice_junctions,r_start,r_stop)
+                        probe_data = (int(block),int(region)),ed,probeset_id ### sort by exon number            
                 else: proceed = 'no'
             elif filter_type == 'probeset':
                 if probeset_id in filter_db: proceed = 'yes'

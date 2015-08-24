@@ -79,6 +79,7 @@ def getPathwayAs(pathway_db,species_code,mod):
         gene_system_list = string.split(wp_id_data,'\n')
         parent_path = export.findParentDir(gpml_path)
         pathway_db = gene_associations.getGPMLGraphData(parent_path,species_code,mod) ### get GPML data back
+        
         #os.remove(gpml_path) ### Only store the file temporarily
         try: export.deleteFolder('BuildDBs/WPs/'+processor_time) ### clear any remaining pathway files
         except Exception: pass
@@ -396,14 +397,15 @@ def getAllSpeciesPathways(species_full):
     return pathway_db
 
 if __name__ == '__main__':
-    pathway_db = getAllSpeciesPathways('Homo sapiens');
-    getPathwayAs(pathway_db,'','');sys.exit()
-    getColoredPathwayTest();sys.exit()
-    filename = "/Users/nsalomonis/Desktop/PCBC_core-grant/SIDS_BioMarker_zscores.txt"
+    #pathway_db = getAllSpeciesPathways('Homo sapiens');
+    #getPathwayAs(pathway_db,'','');sys.exit()
+    #getColoredPathwayTest();sys.exit()
+    filename = "/Users/saljh8/Desktop/PCBC_MetaData_Comparisons/AltAnalyzeExon/Methylation_Variance/GO-Elite_adjp-2fold/regulated/GE.poor_vs_good-fold2.0_adjp0.05.txt"
+    visualizePathwayAssociations(filename,'Hs','Ensembl','WP2857')
     #viewLineageProfilerResults(filename,[]); sys.exit()
     filename = "/Users/nsalomonis/Desktop/code/AltAnalyze/datasets/3'Array/Merrill/GO-Elite/input/GE.ko_vs_wt.txt"
     pathway_db = getAllSpeciesPathways('Homo sapiens')
     for i in pathway_db:
         print i, pathway_db[i].WPName(), len(pathway_db)
         
-    visualizePathwayAssociations(filename,'Mm','Ensembl','WP723')
+

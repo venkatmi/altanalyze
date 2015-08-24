@@ -54,7 +54,8 @@ except Exception:
 
 try:
     from PIL import Image as PIL_Image
-    import ImageTk
+    try: import ImageTk
+    except Exception: from PIL import ImageTk
 except Exception:
     None #print 'Python Imaging Library not installed... using default PNG viewer'
     
@@ -4257,6 +4258,24 @@ def addGlobalFudgeFactor(data_list,data_type):
         for item in data_list: new_list.append(float(item) + global_addition_factor)
     return new_list
 
+def copyDirectoryPDFs(root_dir,AS='AS'):
+    directories = ['AltResults/AlternativeOutputDirectoryDescription.pdf',
+    'AltResultsDirectoryDescription.pdf',
+    'ClusteringDirectoryDescription.pdf',
+    'ExpressionInputDirectoryDescription.pdf',
+    'ExpressionOutputDirectoryDescription.pdf',
+    'GO-Elite/GO-Elite_resultsDirectoryDescription.pdf',
+    'GO-EliteDirectoryDescription.pdf',
+    'RootDirectoryDescription.pdf']
+    import shutil
+    for dir in directories:
+        file = string.split(dir,'/')[-1]
+        proceed=True
+        if 'AltResult' in dir and AS!='AS': proceed=False
+        if proceed:
+            try: shutil.copyfile(filepath('Documentation/DirectoryDescription/'+file), filepath(root_dir+dir))
+            except Exception: pass  
+
 def restrictProbesets(dataset_name):
     ### Take a file with probesets and only perform the splicing-analysis on these (e.g. those already identified from a previous run with a specific pattern)
     ### Allows for propper denominator when calculating z-scores for microRNA and protein-domain ORA
@@ -4481,7 +4500,7 @@ def universalPrintFunction(print_items):
     
 class StatusWindow:
     def __init__(self,root,expr_var,alt_var,goelite_var,additional_var,exp_file_location_db):
-            root.title('AltAnalyze version 2.0.8 beta')
+            root.title('AltAnalyze version 2.0.9.2 beta')
             statusVar = StringVar() ### Class method for Tkinter. Description: "Value holder for strings variables."
             self.root = root
             height = 450; width = 500
@@ -4576,7 +4595,7 @@ class SummaryResultsWindow:
         self.emergency_exit = False            
         self.LINKS = []
         self.tl = tl
-        self.tl.title('AltAnalyze version 2.0.8 beta')
+        self.tl.title('AltAnalyze version 2.0.9 beta')
         self.analysis_type = analysis_type
 
         filename = 'Config/icon.gif'
@@ -4584,7 +4603,10 @@ class SummaryResultsWindow:
         can = Canvas(tl); can.pack(side='top'); can.config(width=img.width(), height=img.height())        
         can.create_image(2, 2, image=img, anchor=NW)
         use_scroll = 'yes'
-
+    
+        try: runGOElite = run_GOElite
+        except Exception: runGOElite='decide_later'
+  
         if 'QC' in summary_data_dbase:
             graphic_links = summary_data_dbase['QC'] ### contains hyperlinks to QC and Clustering plots
             if len(graphic_links)==0: del summary_data_dbase['QC'] ### This can be added if an analysis fails
@@ -4608,7 +4630,9 @@ class SummaryResultsWindow:
         
         f = Font(family="System", size=12, weight="bold")
         txt.tag_config("font", font=f)
-
+        i=0
+        
+        copyDirectoryPDFs(output_dir,AS=analysis_type)
         if analysis_type == 'AS':
             txt.insert(END, '\n')
             result_list = exportComparisonSummary(dataset_name,summary_data_dbase,'print')        
@@ -4616,16 +4640,15 @@ class SummaryResultsWindow:
                 
         if 'QC' in summary_data_dbase and len(graphic_links)>0:
             txt.insert(END, '\nQC and Expression Clustering Plots',"font")
-            txt.insert(END, '\n\n  1) ')
-            i=0                
+            txt.insert(END, '\n\n  1) ')         
             for (name,file_dir) in graphic_links:
                 txt.insert(END, name, ('link', str(i)))
                 if len(graphic_links) > (i+1):
                     txt.insert(END, '\n  %s) ' % str(i+2))
                 self.LINKS.append(file_dir)
                 i+=1
-            txt.insert(END, '\n\nView all plots in the folder ')
-            txt.insert(END, 'DataPlots',('link', str(i)))
+            txt.insert(END, '\n\nView all primary plots in the folder ')
+            txt.insert(END, 'DataPlots',('link', str(i))); i+=1
             self.LINKS.append(output_dir+'DataPlots/')
         else:
             url = 'http://code.google.com/p/altanalyze/'
@@ -4634,6 +4657,16 @@ class SummaryResultsWindow:
             txt.insert(END, "AltAnalyze Online Help", ('link', str(0)))
             txt.insert(END, '\n\n')
 
+        if runGOElite == 'run-immediately':
+            txt.insert(END, '\n\nView all pathway enrichment results in the folder ')
+            txt.insert(END, 'GO-Elite',('link', str(i))); i+=1
+            self.LINKS.append(output_dir+'GO-Elite/')
+            
+        if analysis_type == 'AS':
+            txt.insert(END, '\n\nView all splicing plots in the folder ')
+            txt.insert(END, 'ExonPlots',('link', str(i))); i+=1
+            self.LINKS.append(output_dir+'ExonPlots/') 
+            
         txt.tag_config('link', foreground="blue", underline = 1)
         txt.tag_bind('link', '<Button-1>', showLink)
         txt.insert(END, '\n\n')
@@ -5036,9 +5069,45 @@ def timestamp():
     time_stamp = today+'-'+time_stamp[3]
     return time_stamp
 
+def callWXPython():
+    import wx
+    import AltAnalyzeViewer
+    app = wx.App(False)
+    AltAnalyzeViewer.remoteViewer(app)
+    
 def AltAnalyzeSetup(skip_intro):
     global apt_location; global root_dir;global log_file; global summary_data_db; summary_data_db={}; reload(UI)
     global probability_statistic; global commandLineMode; commandLineMode = 'no'
+    if 'remoteViewer' == skip_intro:
+        if os.name == 'nt':
+            callWXPython()
+        elif os.name == 'ntX':
+            package_path = filepath('python')
+            win_package_path = string.replace(package_path,'python','AltAnalyzeViewer.exe')
+            import subprocess
+            subprocess.call([win_package_path]);sys.exit()
+        elif os.name == 'posix':
+            package_path = filepath('python')
+            #mac_package_path = string.replace(package_path,'python','AltAnalyze.app/Contents/MacOS/python')
+            #os.system(mac_package_path+' RemoteViewer.py');sys.exit()
+            mac_package_path = string.replace(package_path,'python','AltAnalyzeViewer.app/Contents/MacOS/AltAnalyzeViewer')
+            import subprocess
+            subprocess.call([mac_package_path]);sys.exit()
+        """
+        import threading
+        import wx
+        app = wx.PySimpleApp()
+        t = threading.Thread(target=callWXPython)
+        t.setDaemon(1)
+        t.start()
+
+        s = 1
+        queue = mlp.Queue()
+        proc = mlp.Process(target=callWXPython) ### passing sys.stdout unfortunately doesn't work to pass the Tk string
+        proc.start()
+        sys.exit()
+        """
+    reload(UI)
     expr_var, alt_var, additional_var, goelite_var, exp_file_location_db = UI.getUserParameters(skip_intro,Multi=mlp)
     """except Exception:
         if 'SystemExit' not in str(traceback.format_exc()):
@@ -5341,13 +5410,39 @@ def AltAnalyzeMain(expr_var,alt_var,goelite_var,additional_var,exp_file_location
             except Exception:
                 print print_out; sys.exit()
         reload(ProcessAgilentArrays)
-        
+
   if run_from_scratch == 'Process RNA-seq reads' or run_from_scratch == 'buildExonExportFiles':
       import RNASeq; reload(RNASeq); import RNASeq
       for dataset in exp_file_location_db: fl = exp_file_location_db[dataset]
+
       ### The below function aligns splice-junction coordinates to Ensembl exons from BED Files and
       ### exports AltAnalyze specific databases that are unique to this dataset to the output directory
-      biotypes = RNASeq.alignExonsAndJunctionsToEnsembl(species,exp_file_location_db,dataset,Multi=mlp)
+
+      try: fastq_folder = fl.RunKallisto()
+      except Exception: print traceback.format_exc()
+      if len(fastq_folder)>0:
+          try:
+              RNASeq.runKallisto(species,dataset,root_dir,fastq_folder,returnSampleNames=False)
+              biotypes = 'ran'
+          except Exception: biotypes='failed'
+      else:
+          analyzeBAMs = False; bedFilesPresent = False
+          dir_list = unique.read_directory(fl.BEDFileDir())
+          for file in dir_list:
+            if '.bam' in string.lower(file):
+                analyzeBAMs=True
+            if '.bed' in string.lower(file):
+                bedFilesPresent=True
+          if analyzeBAMs and bedFilesPresent==False:
+            import multiBAMtoBED
+            bam_dir = fl.BEDFileDir()
+            refExonCoordinateFile = filepath('AltDatabase/ensembl/'+species+'/'+species+'_Ensembl_exon.txt')
+            outputExonCoordinateRefBEDfile = bam_dir+'/BedRef/'+species+'_'+string.replace(dataset,'exp.','')
+            analysisType = ['exon','junction','reference']
+            #analysisType = ['junction']
+            multiBAMtoBED.parallelBAMProcessing(bam_dir,refExonCoordinateFile,outputExonCoordinateRefBEDfile,analysisType=analysisType,useMultiProcessing=fl.multiThreading(),MLP=mlp)
+    
+          biotypes = RNASeq.alignExonsAndJunctionsToEnsembl(species,exp_file_location_db,dataset,Multi=mlp)
       
       if biotypes == 'failed':
           print_out = 'No valid chromosomal positions in the input BED or BioScope files. Exiting AltAnalyze.'
@@ -5394,7 +5489,7 @@ def AltAnalyzeMain(expr_var,alt_var,goelite_var,additional_var,exp_file_location
             exp_file_location_db,root)
       reload(ExpressionBuilder) ### Clears Memory
       #"""
-      status = 'stop'
+
       graphics=[]
       if fl.MarkerFinder() == 'yes':
             ### Identify putative condition-specific marker genees
@@ -5410,6 +5505,7 @@ def AltAnalyzeMain(expr_var,alt_var,goelite_var,additional_var,exp_file_location
                     output_dir = markerFinder.getAverageExpressionValues(input_exp_file,array_type) ### Either way, make an average annotated file from the DATASET file
                 except Exception:
                     print "Unknown MarkerFinder failure (possible filename issue or data incompatibility)..."
+                    print traceback.format_exc()
                     continue
                 if 'DATASET' in input_exp_file:
                     group_exp_file = string.replace(input_exp_file,'DATASET','AVERAGE')
@@ -5432,6 +5528,27 @@ def AltAnalyzeMain(expr_var,alt_var,goelite_var,additional_var,exp_file_location
       #print '!!!!!finished expression builder'
       #returnLargeGlobalVars()
       expression_data_format = 'log' ### This variable is set from non-log in FilterDABG when present (version 1.16)
+      try:
+            parent_dir = fl.RootDir()+'/GO-Elite/regulated/'
+            dir_list = read_directory(parent_dir)
+            for file in dir_list:
+                input_file_dir = parent_dir+'/'+file
+                inputType = 'IDs'
+                interactionDirs = ['WikiPathways','KEGG','BioGRID','TFTargets']
+                output_dir = parent_dir
+                degrees = 'direct'
+                input_exp_file = input_file_dir
+                gsp = UI.GeneSelectionParameters(species,array_type,manufacturer)
+                gsp.setGeneSet('None Selected')
+                gsp.setPathwaySelect('')
+                gsp.setGeneSelection('')
+                gsp.setOntologyID('')
+                gsp.setIncludeExpIDs(True)
+                UI.networkBuilder(input_file_dir,inputType,output_dir,interactionDirs,degrees,input_exp_file,gsp,'')
+      except Exception:
+        print traceback.format_exc()
+
+                            
       if status == 'stop':
           ### See if the array and species are compatible with GO-Elite analysis
           system_codes = UI.getSystemInfo()
@@ -5547,6 +5664,7 @@ def AltAnalyzeMain(expr_var,alt_var,goelite_var,additional_var,exp_file_location
       elif array_type == 'AltMouse': probeset_annotations_file = 'AltDatabase/'+species+'/'+array_type+'/'+'MASTER-probeset-transcript.txt'
       else: probeset_annotations_file = 'AltDatabase/'+species+'/'+array_type+'/'+species+'_Ensembl_probesets.txt'
 
+      #"""
       if analysis_method != 'none':
           analysis_summary = RunAltAnalyze() ### Only run if analysis methods is specified (only available for RNA-Seq and junction analyses)
       else: analysis_summary = None
@@ -5561,9 +5679,9 @@ def AltAnalyzeMain(expr_var,alt_var,goelite_var,additional_var,exp_file_location
       else:
           ### Occurs for RNASeq when no junctions are present
           summary_data_db2={}
-          
+       
       if array_type == 'junction' or array_type == 'RNASeq':
-          """Reanalyze junction array data separately for individual probests rather than recipricol junctions"""
+          #Reanalyze junction array data separately for individual probests rather than recipricol junctions
           if array_type == 'junction': explicit_data_type = 'exon'
           elif array_type == 'RNASeq': explicit_data_type = 'junction'
           else: report_single_probeset_results = 'no'
@@ -5588,11 +5706,109 @@ def AltAnalyzeMain(expr_var,alt_var,goelite_var,additional_var,exp_file_location
               except Exception:
                 print traceback.format_exc() 
                 None
-              
-      import RNASeq
-      try: RNASeq.compareExonAndJunctionResults(species,array_type,summary_results_db,root_dir)
+      #""" 
+      ### Perform dPSI Analysis
+      try:
+        if 'counts.' in fl.CountsFile(): pass
+        else:
+            dir_list = read_directory(fl.RootDir()+'ExpressionInput')
+            for file in dir_list:
+                if 'exp.' in file and 'steady-state' not in file:
+                    fl.setExpFile(fl.RootDir()+'ExpressionInput/'+file)
+                    #print [fl.RootDir()+'ExpressionInput/'+file]
+      except Exception:
+            search_dir = fl.RootDir()+'/ExpressionInput'
+            files = unique.read_directory(fl.RootDir()+'/ExpressionInput')
+            for file in files:
+                if 'exp.' in file and 'steady-state.txt' not in file:
+                    fl.setExpFile(search_dir+'/'+file)
+      try:
+          #"""
+          try:
+             graphic_links2,cluster_input_file=ExpressionBuilder.unbiasedComparisonSpliceProfiles(fl.RootDir(),
+                    species,array_type,expFile=fl.CountsFile(),min_events=0,med_events=1)
+          except Exception: pass
+          #"""
+          inputpsi = fl.RootDir()+'AltResults/AlternativeOutput/'+species+'_RNASeq_top_alt_junctions-PSI-clust.txt'
+          
+          ### Calculate ANOVA p-value stats based on groups
+          matrix,original_data = statistics.matrixImport(inputpsi)
+          matrix_pvalues=statistics.runANOVA(matrix)
+          anovaFilteredDir = statistics.returnANOVAFiltered(inputpsi,original_data,matrix_pvalues)
+          graphic_link1 = ExpressionBuilder.exportHeatmap(anovaFilteredDir)
+          try: summary_data_db2['QC']+=graphic_link1
+          except Exception: summary_data_db2['QC']=graphic_link1
       except Exception: print traceback.format_exc()
+      
+      import RNASeq
+      try:
+        graphic_link = RNASeq.compareExonAndJunctionResults(species,array_type,summary_results_db,root_dir)
+        try: summary_data_db2['QC']+=graphic_link
+        except Exception: summary_data_db2['QC']=graphic_link
+      except Exception:
+        print traceback.format_exc()
+    
+      #""" 
+      ### Export the top 15 spliced genes
+      try:
+            altresult_dir = fl.RootDir()+'/AltResults/'
+            splicing_results_root = altresult_dir+'/Clustering/'
+            dir_list = read_directory(splicing_results_root)
+            gene_string=''
+            altanalyze_results_folder = altresult_dir+'/RawSpliceData/'+species
+            ### Lookup the raw expression dir
+            expression_results_folder = string.replace(altresult_dir,'AltResults','ExpressionInput')
+            expression_dir = UI.getValidExpFile(expression_results_folder)
+      
+            try: altresult_dir = UI.getValidSplicingScoreFile(altanalyze_results_folder)
+            except Exception,e:
+                  print traceback.format_exc()
+            for file in dir_list:
+                  if 'AltExonConfirmed' in file:
+                      gene_dir = splicing_results_root+'/'+file
+                      genes = UI.importGeneList(gene_dir,limit=50) ### list of gene IDs or symbols
+                      gene_string = gene_string+','+genes
+                      print 'Imported genes from',file,'\n'
+                      show_introns=False
+                      analysisType='plot'
+            for file in dir_list:
+                  if 'Combined-junction-exon-evidence' in file and 'top' not in file:
+                      gene_dir = splicing_results_root+'/'+file
+                      try: isoform_dir = UI.exportJunctionList(gene_dir,limit=50) ### list of gene IDs or symbols
+                      except Exception: print traceback.format_exc()
 
+            UI.altExonViewer(species,array_type,expression_dir, gene_string, show_introns, analysisType, None); print 'completed'
+            UI.altExonViewer(species,array_type,altresult_dir, gene_string, show_introns, analysisType, None); print 'completed'
+      except Exception:
+        print traceback.format_exc()
+
+      try:
+        top_PSI_junction = inputpsi[:-4]+'-ANOVA.txt'
+        isoform_dir2 = UI.exportJunctionList(top_PSI_junction,limit=50) ### list of gene IDs or symbols
+      except Exception:
+        print traceback.format_exc()
+      try:
+          analyzeBAMs = False
+          dir_list = unique.read_directory(fl.RootDir())
+          for file in dir_list:
+            if '.bam' in string.lower(file):
+                analyzeBAMs=True
+          if analyzeBAMs:
+            ### Create sashimi plot index
+            import SashimiIndex
+            SashimiIndex.remoteIndexing(species,fl)
+            import SashimiPlot
+            print 'Exporting Sashimi Plots for the top-predicted splicing events... be patient'
+            try: SashimiPlot.remoteSashimiPlot(species,fl,fl.RootDir(),isoform_dir) ### assuming the bam files are in the root-dir
+            except Exception: pass
+            print 'completed'
+            SashimiPlot.remoteSashimiPlot(species,fl,fl.RootDir(),isoform_dir2) ### assuming the bam files are in the root-dir
+            print 'completed'
+          else:
+            print 'No BAM files present in the root directory... skipping SashimiPlot analysis...'
+      except Exception:
+        print traceback.format_exc()
+        
   try:
       clearObjectsFromMemory(exon_db); clearObjectsFromMemory(constitutive_probeset_db)
       clearObjectsFromMemory(go_annotations); clearObjectsFromMemory(original_microRNA_z_score_data)
@@ -5645,7 +5861,9 @@ def AltAnalyzeMain(expr_var,alt_var,goelite_var,additional_var,exp_file_location
           print "Analysis Complete\n";
           UI.InfoWindow(print_out,'Analysis Completed!')
           tl = Toplevel(); SummaryResultsWindow(tl,'AS',results_dir,dataset_name,'specific',summary_data_db2)
-  except Exception: pass #print 'Failed to open GUI.'
+  except Exception:
+    print traceback.format_exc()
+    pass #print 'Failed to open GUI.'
   skip_intro = 'yes'
   if root !='' and root !=None:
       if pathway_permutations == 'NA' and run_from_scratch != 'Annotate External Results':
@@ -5879,6 +6097,9 @@ def commandLineRun():
     genesToReport = 60
     correlateAll = True
     expression_data_format='log'
+    runICGS=False
+    IDtype=None
+    runKallisto = False
 
     original_arguments = sys.argv
     arguments=[]
@@ -5934,8 +6155,11 @@ def commandLineRun():
                                                          'multiThreading=','multiProcessing=','genesToReport=',
                                                          'correlateAll=','normalization=','justShowTheseIDs=',
                                                          'direction=','analysisType=','algorithm=','rho=',
-                                                         'clusterGOElite=','geneSetName='])
-
+                                                         'clusterGOElite=','geneSetName=','runICGS=','IDtype=',
+                                                         'CountsCutoff=','FoldDiff=','SamplesDiffering=','removeOutliers='
+                                                         'featurestoEvaluate=','restrictBy=','ExpressionCutoff=',
+                                                         'excludeCellCycle=','runKallisto=','fastq_dir=','FDR='])
+    
     except Exception:
         print traceback.format_exc()
         print "There is an error in the supplied command-line arguments (each flag requires an argument)"; sys.exit()
@@ -5964,6 +6188,8 @@ def commandLineRun():
         elif opt == '--expname': exp_name=arg
         elif opt == '--output': output_dir=arg
         elif opt == '--vendor': manufacturer=arg
+        elif opt == '--runICGS': runICGS=True
+        elif opt == '--IDtype': IDtype=arg
         elif opt == '--ignoreBuiltSpecies': ignore_built_species=arg
         elif opt == '--platform':
             if array_type != None: additional_array_types.append(arg)
@@ -5977,6 +6203,11 @@ def commandLineRun():
         elif opt == '--image': image_export.append(arg)
         elif opt == '--wpid': wpid=arg
         elif opt == '--mod': mod=arg
+        elif opt == '--runKallisto':
+            if arg == 'yes' or string.lower(arg) == 'true':
+                runKallisto = True
+        elif opt == '--fastq_dir':
+            input_fastq_dir = arg
         elif opt == '--additional':
             if additional_resources[0] == None:
                 additional_resources=[]
@@ -6029,7 +6260,130 @@ def commandLineRun():
         ### Will need to check here to see if the platform is supported (local or online files) OR wait until an error is encountered later
         
     ######## Perform analyses independent from AltAnalyze database centric analyses that require additional parameters
-    if len(image_export) > 0 or len(accessoryAnalysis)>0:
+    if len(image_export) > 0 or len(accessoryAnalysis)>0 or runICGS:
+        if runICGS:
+            #python AltAnalyze.py --runICGS yes --expdir "/Users/saljh8/Desktop/demo/Myoblast/ExpressionInput/exp.myoblast.txt" --platform "3'array" --species Hs --GeneSetSelection BioMarkers --PathwaySelection Heart --column_method hopach --rho 0.4 --ExpressionCutoff 200 --justShowTheseIDs "NKX2-5 T TBX5" --FoldDiff 10 --SamplesDiffering 3 --excludeCellCycle conservative
+            try: species = species
+            except Exception: 'Please designate a species before continuing (e.g., --species Hs)'
+            try: array_type = array_type
+            except Exception: 'Please designate a species before continuing (e.g., --species Hs)'
+            if len(cel_file_dir)>0:
+                values = species,exp_file_location_db,dataset,mlp_instance
+                StatusWindow(values,'preProcessRNASeq') ### proceed to run the full discovery analysis here!!!
+            
+            else:
+                if len(input_exp_file) > 0: pass
+                else: 'Please indicate a source folder or expression file (e.g., --expdir /dataset/singleCells.txt)'
+            if array_type == 'Other' or 'Other' in array_type:
+                if ':' in array_type:
+                    array_type, IDtype = string.split(array_type)
+                array_type == "3'array"
+                if IDtype == None: IDtype = manufacturer
+        
+            row_method = 'weighted'
+            column_method = 'average'
+            row_metric = 'cosine'
+            column_metric = 'cosine'
+            color_gradient = 'yellow_black_blue'
+            contrast=3
+            vendor = manufacturer
+            GeneSelection = ''
+            PathwaySelection = ''
+            GeneSetSelection = 'None Selected'
+            excludeCellCycle = True
+            rho_cutoff = 0.4
+            restrictBy = 'protein_coding'
+            featurestoEvaluate = 'Genes'
+            ExpressionCutoff = 1
+            CountsCutoff = 1
+            FoldDiff = 2
+            SamplesDiffering = 3
+            JustShowTheseIDs=''
+            removeOutliers = False
+            PathwaySelection=[]
+            for opt, arg in options: ### Accept user input for these hierarchical clustering variables
+                if opt == '--row_method':
+                    row_method=arg
+                    if row_method == 'None': row_method = None
+                elif opt == '--column_method':
+                    column_method=arg
+                    if column_method == 'None': column_method = None
+                elif opt == '--row_metric': row_metric=arg
+                elif opt == '--column_metric': column_metric=arg
+                elif opt == '--color_gradient': color_gradient=arg
+                elif opt == '--GeneSetSelection': GeneSetSelection=arg
+                elif opt == '--PathwaySelection': PathwaySelection.append(arg)
+                elif opt == '--genes': GeneSelection=arg
+                elif opt == '--ExpressionCutoff': ExpressionCutoff=arg
+                elif opt == '--normalization': normalization=arg
+                elif opt == '--justShowTheseIDs': justShowTheseIDs=arg
+                elif opt == '--rho': rho_cutoff=float(arg)
+                elif opt == '--clusterGOElite':clusterGOElite=float(arg)
+                elif opt == '--CountsCutoff':CountsCutoff=int(float(arg))
+                elif opt == '--FoldDiff':FoldDiff=int(float(arg))
+                elif opt == '--SamplesDiffering':SamplesDiffering=int(float(arg))
+                elif opt == '--removeOutliers':removeOutliers=arg
+                elif opt == '--featurestoEvaluate':featurestoEvaluate=arg
+                elif opt == '--restrictBy':restrictBy=arg
+                elif opt == '--excludeCellCycle':
+                    excludeCellCycle=arg
+                    if excludeCellCycle == 'False' or excludeCellCycle == 'no': excludeCellCycle = False
+                    elif excludeCellCycle == 'True' or excludeCellCycle == 'yes' or excludeCellCycle == 'conservative': excludeCellCycle = True
+                elif opt == '--contrast':
+                    try: contrast=float(arg)
+                    except Exception: print '--contrast not a valid float';sys.exit()
+                elif opt == '--vendor': vendor=arg
+                elif opt == '--display':
+                    if arg=='yes':
+                        display=True
+                    elif arg=='True':
+                        display=True
+                    else:
+                        display=False
+            if len(PathwaySelection)==0: PathwaySelection=''
+            if len(GeneSetSelection)>0 or GeneSelection != '':
+                gsp = UI.GeneSelectionParameters(species,array_type,vendor)
+                gsp.setGeneSet(GeneSetSelection)
+                gsp.setPathwaySelect(PathwaySelection)
+                gsp.setGeneSelection(GeneSelection)
+                gsp.setJustShowTheseIDs(JustShowTheseIDs)
+                gsp.setNormalize('median')
+                gsp.setSampleDiscoveryParameters(ExpressionCutoff,CountsCutoff,FoldDiff,SamplesDiffering,   
+                        removeOutliers,featurestoEvaluate,restrictBy,excludeCellCycle,column_metric,column_method,rho_cutoff) 
+                
+            import RNASeq
+            mlp_instance = mlp
+            
+            if cel_file_dir != '':
+                expFile = cel_file_dir + '/ExpressionInput/'+ 'exp.'+exp_name+'.txt'
+            elif input_exp_file !='':
+                if 'ExpressionInput' in input_exp_file: expFile = input_exp_file
+                else:
+                    ### Copy over expression file to ExpressionInput
+                    expdir2 = string.replace(input_exp_file,'exp.','')
+                    root_dir = export.findParentDir(expFile)
+                    expFile = root_dir+'/ExpressionInput/exp.'+export.findFilename(expdir2)
+                    export.copyFile(input_exp_file, expFile)
+                    
+            global log_file
+            root_dir = export.findParentDir(expFile)
+            root_dir = string.replace(root_dir,'/ExpressionInput','')
+            time_stamp = timestamp()    
+            log_file = filepath(root_dir+'AltAnalyze_report-'+time_stamp+'.log')
+            log_report = open(log_file,'w'); log_report.close()
+            sys.stdout = Logger('')
+            count = verifyFileLength(expFile[:-4]+'-steady-state.txt')
+            if count>1:
+                expFile = expFile[:-4]+'-steady-state.txt'
+            elif array_type=='RNASeq':
+                ### Indicates that the steady-state file doesn't exist. The exp. may exist, be could be junction only so need to re-build from bed files here
+                values = species,exp_file_location_db,dataset,mlp_instance
+                StatusWindow(values,'preProcessRNASeq') ### proceed to run the full discovery analysis here!!!
+                expFile = expFile[:-4]+'-steady-state.txt'
+            print [excludeCellCycle]
+            UI.RemotePredictSampleExpGroups(expFile, mlp_instance, gsp,(species,array_type)) ### proceed to run the full discovery analysis here!!!
+            sys.exit()
+            
         if 'WikiPathways' in image_export:
             #python AltAnalyze.py --input /Users/test/input/criterion1.txt --image WikiPathways --mod Ensembl --species Hs --wpid WP536
             if wpid==None:
@@ -6110,7 +6464,7 @@ def commandLineRun():
             PathwaySelection = ''
             GeneSetSelection = 'None Selected'
             rho = None
-            
+
             for opt, arg in options: ### Accept user input for these hierarchical clustering variables
                 if opt == '--row_method':
                     row_method=arg
@@ -6176,6 +6530,7 @@ def commandLineRun():
             
         if 'PCA' in image_export:
             #AltAnalyze.py --input "/Users/nsalomonis/Desktop/folds.txt" --image PCA --plotType 3D --display True --labels yes
+            #--algorithm "t-SNE"
             include_labels = 'yes'
             plotType = '2D'
             pca_algorithm = 'SVD'
@@ -6189,7 +6544,7 @@ def commandLineRun():
                 if opt == '--algorithm': pca_algorithm=arg
                 if opt == '--geneSetName': geneSetName=arg
                 if opt == '--display':
-                    if arg=='yes' or arg=='True':
+                    if arg=='yes' or arg=='True' or arg == 'true':
                         display=True
 
             if input_file_dir==None:
@@ -6202,9 +6557,13 @@ def commandLineRun():
             files_to_merge=[]
             for opt, arg in options: ### Accept user input for these hierarchical clustering variables
                 if opt == '--input': files_to_merge.append(arg)
+                if opt == '--display':
+                    if arg=='yes' or arg=='True' or arg == 'true':
+                        display=True
+
             if len(files_to_merge)<2:
                 print 'Please designate two or more files to compare (--input)';sys.exit()
-            UI.vennDiagram(files_to_merge, output_dir, None)
+            UI.vennDiagram(files_to_merge, output_dir, None, display=display)
             sys.exit()
 
         if 'AltExonViewer' in image_export:
@@ -6259,7 +6618,7 @@ def commandLineRun():
                                 print 'Imported genes from',file,'\n'
                                 #print [altresult_dir];sys.exit()
                         UI.altExonViewer(species,platform,altresult_dir, gene_string, show_introns, analysisType, False)
-                    except ZeroDivisionError: pass
+                    except Exception: pass
                     sys.exit()
                         
             if len(genes)==0:
@@ -6295,7 +6654,6 @@ def commandLineRun():
                 interactionDirs = ['WikiPathways','KEGG','BioGRID','TFTargets']
             if interactionDirs == ['confident']:
                 interactionDirs = ['WikiPathways','KEGG','TFTargets']
-
 
             if len(Genes) == 0: Genes = None
             if output_dir == None: pass
@@ -6513,7 +6871,7 @@ def commandLineRun():
                             print 'update_domain',update_domain
                             print 'update_miRs',update_miRs
                             update.executeParameters(specific_species,platform_name,force,genomic_build,update_uniprot,update_ensembl,update_probeset_to_ensembl,update_domain,update_miRs,update_all,update_miR_seq,ensembl_version)
-                        else: print 'ignoring',specific_species
+                        else: print 'ignoring',specific_species 
             sys.exit()
             
     if 'package' in update_method:
@@ -6678,6 +7036,7 @@ def commandLineRun():
             #python AltAnalyze.py --update markers --platform gene --expdir "/home/socr/c/users2/salomoni/other/boxer/normalization/Mm_Gene-TissueAtlas/AltResults/RawSpliceData/Mm/splicing-index/meta.txt"
             #python AltAnalyze.py --update markers --platform "3'array" --expdir "/home/socr/c/users2/salomoni/other/boxer/normalization/U133/ExpressionOutput/DATASET-meta.txt"
             #python AltAnalyze.py --update markers --compendiumType ncRNA --platform "exon" --expdir "/home/socr/c/users2/salomoni/conklin/nsalomonis/normalization/Hs_Exon-TissueAtlas/ExpressionOutput/DATASET-meta.txt"
+            #python AltAnalyze.py --update markers --platform RNASeq --species Mm --geneRPKM 1 --expdir /Users/saljh8/Desktop/Grimes/MergedRSEM/DN-Analysis/ExpressionInput/exp.DN.txt --genesToReport 200
             """The markerFinder module:
             1) takes an input ExpressionOutput file (DATASET.YourExperimentName.txt)
             2) extracts group average expression and saves to AVERAGE.YourExperimentName.txt to the ExpressionOutput directory
@@ -6793,12 +7152,15 @@ def commandLineRun():
         exp_name = ief_list[-1]
 
 
-    if len(cel_file_dir)>0:
+    if len(cel_file_dir)>0 or runKallisto == True:
+        # python AltAnalyze.py --species Mm --platform RNASeq --runKallisto yes --expname test
         if exp_name == None:
             print "No experiment name defined. Please sumbit a name (e.g., --expname CancerComp) before proceeding."; sys.exit()
         else:
             dataset_name = 'exp.'+exp_name+'.txt'; exp_file_dir = filepath(output_dir+'/ExpressionInput/'+dataset_name)
-        if run_from_scratch!= 'Process Feature Extraction files':
+        if runKallisto:
+            run_from_scratch == 'Process RNA-seq reads'
+        elif run_from_scratch!= 'Process Feature Extraction files':
             run_from_scratch = 'Process CEL files'; proceed='yes'
             if array_type == 'RNASeq': file_ext = '.BED'
             else: file_ext = '.CEL'
@@ -6908,7 +7270,7 @@ def commandLineRun():
         ge_fold_cutoffs, ge_pvalue_cutoffs, ge_ptype, filter_method, z_threshold, p_val_threshold, change_threshold, ORA_algorithm, resources_to_analyze, goelite_permutations, mod, returnPathways, NA = goelite_defaults
         use_direct_domain_alignments_only,microRNA_prediction_method = functional_analysis_defaults
         analysis_method, additional_algorithms, filter_probeset_types, analyze_all_conditions, p_threshold, alt_exon_fold_variable, additional_score, permute_p_threshold, gene_expression_cutoff, remove_intronic_junctions, perform_permutation_analysis, export_NI_values, run_MiDAS, calculate_normIntensity_p, filter_for_AS = alt_exon_defaults
-        dabg_p, rpkm_threshold, gene_exp_threshold, exon_exp_threshold, exon_rpkm_threshold, expression_threshold, perform_alt_analysis, analyze_as_groups, expression_data_format, normalize_feature_exp, normalize_gene_data, avg_all_for_ss, include_raw_data, probability_statistic, batch_effects, marker_finder, visualize_qc_results, run_lineage_profiler, null = expr_defaults
+        dabg_p, rpkm_threshold, gene_exp_threshold, exon_exp_threshold, exon_rpkm_threshold, expression_threshold, perform_alt_analysis, analyze_as_groups, expression_data_format, normalize_feature_exp, normalize_gene_data, avg_all_for_ss, include_raw_data, probability_statistic, FDR_statistic, batch_effects, marker_finder, visualize_qc_results, run_lineage_profiler, null = expr_defaults
     elif denom_file_dir != None and species != None:
         proceed = 'yes' ### Only run GO-Elite
         expr_defaults, alt_exon_defaults, functional_analysis_defaults, goelite_defaults = UI.importDefaults('RNASeq',species) ### platform not relevant
@@ -6936,6 +7298,7 @@ def commandLineRun():
         elif opt == '--ORAstat': ORA_algorithm=arg
         elif opt == '--returnPathways': returnPathways=arg
         
+        elif opt == '--FDR': FDR_statistic=arg
         elif opt == '--dabgp': dabg_p=arg
         elif opt == '--rawexp': expression_threshold=arg
         elif opt == '--geneRPKM': rpkm_threshold=arg
@@ -7279,12 +7642,14 @@ def commandLineRun():
             if ((groups_found != 'found' or comps_found != 'found') and analyze_all_conditions != 'all groups') or (analyze_all_conditions == 'all groups' and groups_found != 'found'):
                 files_exported = UI.predictGroupsAndComps(cel_files,output_dir,exp_name)
                 if files_exported == 'yes': print "AltAnalyze inferred a groups and comps file from the CEL file names."
+                elif run_lineage_profiler == 'yes' and input_file_dir != None and pipelineAnalysis == False and '--runLineageProfiler' in arguments: pass 
                 else: print '...groups and comps files not found. Create before running AltAnalyze in command line mode.';sys.exit()
             fl = UI.ExpressionFileLocationData(input_exp_file,input_stats_file,groups_file_dir,comps_file_dir)
             dataset_name = exp_name
             if analyze_all_conditions == "all groups":
                 try: array_group_list,group_db = UI.importArrayGroupsSimple(groups_file_dir,cel_files)
-                except Exception: print '...groups and comps files not found. Create before running AltAnalyze in command line mode.';sys.exit()
+                except Exception:
+                    print '...groups and comps files not found. Create before running AltAnalyze in command line mode.';sys.exit()
                 print len(group_db), 'groups found'
                 if len(group_db) == 2: analyze_all_conditions = 'pairwise'
             exp_file_location_db={}; exp_file_location_db[exp_name]=fl
@@ -7314,7 +7679,8 @@ def commandLineRun():
                 UI.exportGroups(exp_file_location_db,array_group_list)
                 print len(group_db), 'groups found'
                 if len(group_db) == 2: analyze_all_conditions = 'pairwise'
-
+            try: fl.setRunKallisto(input_fastq_dir)
+            except Exception: pass
         elif run_from_scratch == 'Process AltAnalyze filtered':
             if '.txt' in input_filtered_dir: ### Occurs if the user tries to load a specific file
                 dirs = string.split(input_filtered_dir,'/')
@@ -7349,6 +7715,8 @@ def commandLineRun():
             fl.setCompendiumType(compendiumType)
             fl.setCompendiumPlatform(compendiumPlatform)
             fl.setVendor(manufacturer)
+            try: fl.setFDRStatistic(FDR_statistic)
+            except Exception: pass
             fl.setAnalysisMode('commandline')
             fl.setBatchEffectRemoval(batch_effects)
             fl.setChannelToExtract(channel_to_extract)
@@ -7403,6 +7771,8 @@ def runCommandLineVersion():
     #except Exception: null=[]
     #print [command_args];sys.exit()
     if len(sys.argv[1:])>0 and '--' in command_args:
+        if '--GUI' in command_args:
+            AltAnalyzeSetup('no') ### a trick to get back to the main page of the GUI (if AltAnalyze has Tkinter conflict)
         try:
             commandLineRun()
         except Exception:
@@ -7429,6 +7799,7 @@ def testResultsPanel():
     global pathway_permutations; pathway_permutations = 'NA'
     global log_file; log_file = 'null.txt'
     global array_type; global explicit_data_type
+    global run_GOElite; run_GOElite = 'run-immediately'
     
     explicit_data_type = 'exon-only'
     array_type = 'RNASeq'
@@ -7487,9 +7858,10 @@ class Logger(object):
 if __name__ == '__main__':
     try: mlp.freeze_support()
     except Exception: pass
-    
+
     #testResultsPanel()
     skip_intro = 'yes'; #sys.exit()
+    #skip_intro = 'remoteViewer'
     runCommandLineVersion()
     if use_Tkinter == 'yes': AltAnalyzeSetup(skip_intro)
 
@@ -7510,7 +7882,7 @@ if __name__ == '__main__':
     13) (done) Support additional ID types for initial import (ID select option and pulldown - Other)
     14) Proper FDR p-value for alt.exon analyses (include all computed p-values)
     15) Add all major clustering and LineageProfiler options to UI along with stats filtering by default
-    16) Make GO-Elite analysis the default
+    16) (done) Make GO-Elite analysis the default
     17) Support R check (and response that they need it) along with GUI gcrma, agilent array, hopach, combat
     18) Probe-level annotations from Ensembl (partial code in place) and probe-level RMA in R (or possibly APT) - google pgf for U133 array
     19) (done) Include various gene databases for LineageProfiler in download and allow for custom databases to be used (markerFinder based)

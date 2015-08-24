@@ -70,7 +70,14 @@ def reorderArrayHeaders(data_headers,array_order,comp_group_list,array_linker_db
     #return expbuilder_value_db,group_count_list2,ranked_array_headers,raw_data_comps,raw_data_comp_headers
     return group_count_list2,raw_data_comp_headers
 
-def reorder(data,data_headers,array_order,comp_group_list,probeset_db,include_raw_data,array_type,norm,fl,logvalues=True):
+def filterBlanks(data_list):
+    data_list_new=[]
+    for i in data_list:
+        if i=='':pass
+        else: data_list_new.append(i)
+    return data_list_new
+
+def reorder(data,data_headers,array_order,comp_group_list,probeset_db,include_raw_data,array_type,norm,fl,logvalues=True,blanksPresent=False):
     ###array_order gives the final level order sorted, followed by the original index order as a tuple                   
     expbuilder_value_db = {}; group_name_db = {}; summary_filtering_stats = {}; pval_summary_db= {}
     replicates = 'yes'
@@ -81,10 +88,12 @@ def reorder(data,data_headers,array_order,comp_group_list,probeset_db,include_ra
     ### Define expression variables
     try: probability_statistic = fl.ProbabilityStatistic()
     except Exception: probability_statistic = 'unpaired t-test'
-    try: gene_exp_threshold = fl.GeneExpThreshold()
+    try: gene_exp_threshold = math.log(fl.GeneExpThreshold(),2)
     except Exception: gene_exp_threshold = 0
     try: gene_rpkm_threshold = fl.RPKMThreshold()
     except Exception: gene_rpkm_threshold = 0
+    try: FDR_statistic = fl.FDRStatistic()
+    except Exception: FDR_statistic = 'Benjamini-Hochberg'
     calculateAsNonLog=True
     
     ### Begin processing sample expression values according to the organized groups
@@ -120,16 +129,23 @@ def reorder(data,data_headers,array_order,comp_group_list,probeset_db,include_ra
             groups_name = group1_name + "_vs_" + group2_name
             data_list1 = grouped_ordered_array_list[group1] 
             data_list2 = grouped_ordered_array_list[group2] #baseline expression
-            avg1 = statistics.avg(data_list1)
+            if blanksPresent: ### Allows for empty cells
+                data_list1 = filterBlanks(data_list1)
+                data_list2 = filterBlanks(data_list2)
+            try: avg1 = statistics.avg(data_list1)
+            except Exception: avg1 = ''
             try: avg2 = statistics.avg(data_list2)
-            except ValueError: print data_list2,row_id; forceError
-            if (logvalues == False and array_type != 'RNASeq') or (logvalues==False and calculateAsNonLog):
-                fold = avg1/avg2
-                log_fold = math.log(fold,2)
-                if fold<1: fold = -1.0/fold
-            else:
-                log_fold = avg1 - avg2
-                fold = statistics.log_fold_conversion(log_fold)
+            except Exception: avg2=''
+            try:
+                if (logvalues == False and array_type != 'RNASeq') or (logvalues==False and calculateAsNonLog):
+                    fold = avg1/avg2
+                    log_fold = math.log(fold,2)
+                    if fold<1: fold = -1.0/fold
+                else:
+                    log_fold = avg1 - avg2
+                    fold = statistics.log_fold_conversion(log_fold) 
+            except Exception:
+                log_fold=''; fold=''
             try:
                 #t,df,tails = statistics.ttest(data_list1,data_list2,2,3) #unpaired student ttest, calls p_value function
                 #t = abs(t); df = round(df); p = str(statistics.t_probability(t,df))
@@ -137,11 +153,12 @@ def reorder(data,data_headers,array_order,comp_group_list,probeset_db,include_ra
             except Exception: p = 1; sg = 1; N1=0; N2=0
             comp = group1,group2
             if array_type == 'RNASeq': ### Also non-log but treated differently
-                if norm == 'RPKM': adj = 0
+                if 'RPKM' == norm: adj = 0
                 else: adj = 1
                 if calculateAsNonLog == False:
-                    avg1 = math.pow(2,avg1)-adj; avg2 = math.pow(2,avg2)-adj
-                if norm == 'RPKM':
+                    try: avg1 = math.pow(2,avg1)-adj; avg2 = math.pow(2,avg2)-adj
+                    except Exception: avg1=''; avg2=''
+                if 'RPKM' == norm:
                     if avg1 < gene_rpkm_threshold and avg2 < gene_rpkm_threshold:
                         log_fold = 'Insufficient Expression'
                         fold = 'Insufficient Expression'
@@ -149,6 +166,18 @@ def reorder(data,data_headers,array_order,comp_group_list,probeset_db,include_ra
                     if avg1 < gene_exp_threshold and avg2 < gene_exp_threshold:
                         log_fold = 'Insufficient Expression'
                         fold = 'Insufficient Expression'
+                    #if row_id=='ENSG00000085514':
+                    #if fold=='Insufficient Expression':
+                    #print [norm, avg1, avg2, fold, comp, gene_exp_threshold, gene_rpkm_threshold, row_id]
+                    #5.96999111075 7.72930768675 Insufficient Expression (3, 1) 1.0 ENSG00000085514
+            if gene_rpkm_threshold!=0 and calculateAsNonLog: ### Any other data
+                a1 = nonLogAvg(data_list1)
+                a2 = nonLogAvg(data_list2)
+                #print [a1,a2,gene_rpkm_threshold]
+                if a1<gene_rpkm_threshold and a2<gene_rpkm_threshold:
+                    log_fold = 'Insufficient Expression'
+                    fold = 'Insufficient Expression'
+                #print log_fold;kill
             try:
                 gs = statistics.GroupStats(log_fold,fold,p)
                 stat_results[comp] = groups_name,gs,group2_name
@@ -165,9 +194,14 @@ def reorder(data,data_headers,array_order,comp_group_list,probeset_db,include_ra
         ### Replaces the below method to get the largest possible comparison fold and ftest p-value
         grouped_exp_data = []; avg_exp_data = []
         for group in grouped_ordered_array_list:
-            data_list = grouped_ordered_array_list[group]; grouped_exp_data.append(data_list)
+            data_list = grouped_ordered_array_list[group]
+            if blanksPresent: ### Allows for empty cells
+                data_list = filterBlanks(data_list)
+            if len(data_list)>0: grouped_exp_data.append(data_list)
             try: avg = statistics.avg(data_list); avg_exp_data.append(avg)
-            except Exception: print row_id, group, data_list;kill
+            except Exception:
+                avg = ''
+                #print row_id, group, data_list;kill
         try: avg_exp_data.sort(); max_fold = avg_exp_data[-1]-avg_exp_data[0]
         except Exception: max_fold = 'NA'
         try: ftestp = statistics.OneWayANOVA(grouped_exp_data)
@@ -276,6 +310,7 @@ def reorder(data,data_headers,array_order,comp_group_list,probeset_db,include_ra
             if comp == compid:
                 gs = pval_summary_db[(rowid,comp)]
                 pval_db[rowid] = gs
+
         if 'moderated' in probability_statistic and replicates == 'yes':
             ### Moderates the original reported test p-value prior to adjusting
             try: statistics.moderateTestStats(pval_db,probability_statistic)
@@ -285,7 +320,17 @@ def reorder(data,data_headers,array_order,comp_group_list,probeset_db,include_ra
                         print 'Moderated test failed due to issue with mpmpath or out-of-range values\n   ... using unmoderated unpaired test instead!'
                 null=[] ### Occurs when not enough replicates
             round+=1
-        statistics.adjustPermuteStats(pval_db)
+            
+        if FDR_statistic == 'Benjamini-Hochberg':
+            statistics.adjustPermuteStats(pval_db)
+        else:
+            ### Calculate a qvalue (https://github.com/nfusi/qvalue)
+            import numpy; import qvalue; pvals = []; keys = []
+            for key in pval_db: pvals.append(pval_db[key].Pval()); keys.append(key)
+            pvals = numpy.array(pvals)
+            pvals = qvalue.estimate(pvals)
+            for i in range(len(pvals)): pval_db[keys[i]].SetAdjP(pvals[i])
+            
         for rowid in pval_db:
             gs = pval_db[rowid]
             expbuilder_value_db[rowid][gs.AdjIndex()] = gs.AdjP() ### set the place holder to the calculated value
@@ -295,6 +340,9 @@ def reorder(data,data_headers,array_order,comp_group_list,probeset_db,include_ra
     pval_summary_db=[]            
     ###Finished re-ordering lists and adding statistics to expbuilder_value_db
     return expbuilder_value_db, array_fold_headers, summary_filtering_stats, raw_data_comp_headers
+
+def nonLogAvg(data_list):
+    return statistics.avg(map(lambda x: math.pow(2,x)-1,data_list))
 
 if __name__ == '__main__':
     print array_cluster_final

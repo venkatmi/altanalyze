@@ -35,7 +35,8 @@ def getAllDirectoryFiles(import_dir):
     dir_list = read_directory(import_dir)  #send a sub_directory to a function to identify all files in a directory
     for data in dir_list:    #loop through each file in the directory to output results
         data_dir = import_dir[1:]+'/'+data
-        all_files.append(data_dir)
+        if '.' in data:
+            all_files.append(data_dir)
     return all_files
 
 def getDirectoryFiles(import_dir,search_term):
@@ -43,7 +44,7 @@ def getDirectoryFiles(import_dir,search_term):
     matches=[]
     for data in dir_list:    #loop through each file in the directory to output results
         data_dir = import_dir[1:]+'/'+data
-        if search_term not in data_dir: matches.append(data_dir)
+        if search_term not in data_dir and '.' in data: matches.append(data_dir)
     return matches
 
 def cleanUpLine(line):
@@ -57,6 +58,7 @@ def combineAllLists(files_to_merge,original_filename,includeColumns=False):
     headers =[]; all_keys={}; dataset_data={}; files=[]
     for filename in files_to_merge:
         print filename
+        duplicates=[]
         fn=filepath(filename); x=0; combined_data ={}; files.append(filename)
         if '/' in filename:
             file = string.split(filename,'/')[-1][:-4]
@@ -91,10 +93,11 @@ def combineAllLists(files_to_merge,original_filename,includeColumns=False):
                     try: all_keys[key] += 1
                     except KeyError: all_keys[key] = 1
                 if permform_all_pairwise == 'yes':
-                    try: combined_data[key].append(values)
+                    try: combined_data[key].append(values); duplicates.append(key)
                     except Exception: combined_data[key] = [values]
                 else:
                     combined_data[key] = values
+        #print duplicates
         dataset_data[filename] = combined_data
     for i in dataset_data:
         print len(dataset_data[i]), i
@@ -322,7 +325,8 @@ if __name__ == '__main__':
             temp_files_to_merge = customLSDeepCopy(files_to_merge)
             original_filename = string.split(file,'/'); original_filename = original_filename[-1]
             temp_files_to_merge.append(file)
-            combineAllLists(temp_files_to_merge,original_filename)
+            if '.' in file:
+                combineAllLists(temp_files_to_merge,original_filename)
     else:
         combineAllLists(files_to_merge,'',includeColumns=includeColumns)
     print "Finished combining lists. Select return/enter to exit"; inp = sys.stdin.readline()

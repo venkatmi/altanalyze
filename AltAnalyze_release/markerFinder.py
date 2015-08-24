@@ -125,7 +125,7 @@ def advancedPearsonCorrelationAnalysis(uid,data_list1,tissue_template_db):
 
 def PearsonCorrelationAnalysis(uid,data_list1,tissue_template_db):
     if correlateAllGenes:
-        min_rho = -1
+        min_rho = -2
     else:
         min_rho = 0.3
     for tissue in tissue_template_db:
@@ -142,7 +142,11 @@ def rhoCalculation(data_list1,tissue_template):
     try:
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore",category=RuntimeWarning) ### hides import warnings
-            rho,p = stats.pearsonr(data_list1,tissue_template)
+            try: rho,p = stats.pearsonr(data_list1,tissue_template)
+            except Exception:
+                #data_list_alt = [0 if x==None else x for x in data_list1]
+                #rho,p = stats.pearsonr(data_list1,tissue_template)
+                kill
     except Exception:
         rho = pearson(data_list1,tissue_template)
     return rho
@@ -308,6 +312,7 @@ def reorderInputFile(custom_path,marker_list,marker_condition_db):
     fn=filepath(custom_path)
     exp_db={}
     probeset_symbol_db={}
+    #print custom_path;sys.exit()
     for line in open(fn,'rU').xreadlines():
         data = cleanUpLine(line)
         t = string.split(data,'\t')
@@ -327,6 +332,10 @@ def reorderInputFile(custom_path,marker_list,marker_condition_db):
         condition = marker_condition_db[uid]
         try: export_obj.write(condition+':'+exp_db[uid])
         except Exception:
+            print [uid]
+            for i in exp_db:
+                print [i];break
+            
             print 'Error encountered with the ID:',uid, 'not in exp_db'; kill
     export_obj.close()
     
@@ -358,7 +367,7 @@ def generateMarkerHeatMaps(fl,platform,convertNonLogToLog=False,graphics=[]):
             reorderInputFile(custom_path,marker_list, marker_condition_db)
             row_method = None; row_metric = 'cosine'; column_method = None; column_metric = 'euclidean'; color_gradient = 'yellow_black_blue'; transpose = False
             try:
-                graphics = clustering.runHCexplicit(custom_path, graphics, row_method, row_metric, column_method, column_metric, color_gradient, transpose, display=False)
+                graphics = clustering.runHCexplicit(custom_path, graphics, row_method, row_metric, column_method, column_metric, color_gradient, transpose, display=False, Normalize=True)
             except Exception:
                 print traceback.format_exc()
                 print 'Error occured in generated MarkerGene clusters... see ExpressionOutput/MarkerFinder files.'
@@ -416,10 +425,10 @@ def analyzeData(filename,Species,Platform,codingType,geneToReport=60,correlateAl
         try: RPKM_threshold = AdditionalParameters.RPKMThreshold() ### Used for exclusion of non-expressed genes
         except Exception: RPKM_threshold = 3; logTransform = True
 
-    correlationDirection = 1 ### Correlate to a positive or negative idealized pattern
+    correlationDirection = 1.00 ### Correlate to a positive or negative idealized pattern
     try:
         if AdditionalParameters.CorrelationDirection() != 'up' and AdditionalParameters.CorrelationDirection() != 'positive':
-            correlationDirection = -1
+            correlationDirection = -1.00
     except Exception: pass
     #print correlationDirection
     fn=filepath(filename); x=0; t2=['ID']; cluster_db={}; cluster_list = []; global coding_type; coding_type = codingType
@@ -435,7 +444,7 @@ def analyzeData(filename,Species,Platform,codingType,geneToReport=60,correlateAl
         if x == 0:
             updated_names = ['ID']
             correlations = 'single'
-            tissue_template_db,group_sample_db = getReplicateData(fn,t)
+            tissue_template_db,group_sample_db = getReplicateData(fn,t[1:])
             if '~' in data: correlations = 'multiple'
             elif t[1] in group_sample_db:
                 if '~' in group_sample_db[t[1]]:
@@ -561,8 +570,8 @@ def getReplicateData(expr_input,t):
     ### use comps in the future to visualize group comparison changes
     sample_list,group_sample_db,group_db,group_name_sample_db,comp_groups,comps_name_db = ExpressionBuilder.simpleGroupImport(groups_dir,splitHeaders=splitHeaders)
     sample_list = t ### This is the actual order in the input expression files
-    
-    for x in t[1:]:
+
+    for x in t:
         try: group_name = group_db[x]
         except Exception:
             try:
@@ -582,7 +591,7 @@ def getReplicateData(expr_input,t):
 def createReplicateCorrelationTemplate(samples,group_index_db):
     ### This create multiple binary indicates, but for replicates as opposed to an individual mean of multiple groups
     sample_template_db={}
-    null_template = [0]*len(samples)
+    null_template = [0.00]*len(samples)
     for group in group_index_db:
         sample_template = list(null_template) ### creates a modifiable copy
         group_indeces = group_index_db[group]
@@ -685,7 +694,7 @@ def identifyMarkers(filename,cluster_comps):
                 
             x = 1
         else: #elif x<500:
-            probeset = t[0]; proceed = 'no'
+            probeset = t[0]; proceed = 'no'; symbol=''; geneID=''
             try:
                 lti = len(tissues)+1
                 try: description,symbol=annotation_db[probeset][:2] ### See above annotation_db download
@@ -724,6 +733,7 @@ def identifyMarkers(filename,cluster_comps):
             count+=1
             #if coding_class != 'protein_coding':
             #print coding_class, coding_type, proceed, probeset, symbol, species, len(gene_to_symbol),coding_db[probeset];sys.exit()
+            #proceed = 'yes'
             if len(coding_class) == 0 or proceed == 'yes':
                 if compare_clusters == 'yes':
                     exp_values=[]
@@ -750,7 +760,9 @@ def identifyMarkers(filename,cluster_comps):
                         #print max(exp_values), RPKM_threshold;sys.exit()
                 else:
                     if 'exp.' in filename:
-                        PearsonCorrelationAnalysis((probeset,symbol),exp_values,tissue_template_db)
+                        try: PearsonCorrelationAnalysis((probeset,symbol),exp_values,tissue_template_db)
+                        except Exception: ### For missing values
+                            advancedPearsonCorrelationAnalysis((probeset,symbol),exp_values,tissue_template_db)
                     else:
                         advancedPearsonCorrelationAnalysis((probeset,symbol),exp_values,tissue_template_db)
                 x+=1
@@ -773,14 +785,15 @@ def identifyMarkers(filename,cluster_comps):
             if symbol not in ranked_list:
                 ranked_list.append(symbol); ranked_lookup.append([probeset,symbol,rho])
         for (probeset,symbol,rho) in ranked_lookup[:genesToReport]:  ### Here is where we would compare rho values between tissues with the same probesets
-            if compare_clusters == 'yes':
-                try: tissue_specific_IDs[tissue].append(probeset)
-                except Exception: tissue_specific_IDs[tissue] = [probeset]
-            else:
-                try: tissue_specific_IDs[probeset].append(tissue)
-                except Exception: tissue_specific_IDs[probeset] = [tissue]
-            try: interim_correlations[tissue].append([probeset,symbol,rho])
-            except Exception: interim_correlations[tissue] = [[probeset,symbol,rho]]
+            if rho>0.1:
+                if compare_clusters == 'yes':
+                    try: tissue_specific_IDs[tissue].append(probeset)
+                    except Exception: tissue_specific_IDs[tissue] = [probeset]
+                else:
+                    try: tissue_specific_IDs[probeset].append(tissue)
+                    except Exception: tissue_specific_IDs[probeset] = [tissue]
+                try: interim_correlations[tissue].append([probeset,symbol,rho])
+                except Exception: interim_correlations[tissue] = [[probeset,symbol,rho]]    
         if correlateAllGenes:
             for tissue in tissue_scores:
                 for (rho,(probeset,symbol)) in tissue_scores[tissue]:
@@ -1379,7 +1392,7 @@ def filterDetectionPvalues(Species,Platform,fl,dabg_gene_dir):
     input_exp_file = string.replace(input_exp_file,'-steady-state','')
 
     global expressed_exon_db; expressed_exon_db={}
-    """
+    #"""
     prior_altExons = importMarkerFinderExons(dabg_gene_dir,species=species,type='MarkerFinder-Exon')
     #reorderMultiLevelExpressionFile(dabg_gene_dir) ### Re-sort stats file
     regulatedProbesets = filterAltExonResults(dabg_gene_dir) ### AltResults/AlternativeOutput SI file
@@ -1423,12 +1436,11 @@ def filterDetectionPvalues(Species,Platform,fl,dabg_gene_dir):
     output_file = string.replace(dabg_gene_dir,'stats.','topSplice.')
     array_type = 'altSplice'; compendiumType = 'AltExon'
  
-
     analyzeData(output_file,species,array_type,compendiumType,geneToReport=200,AdditionalParameters=fl,logTransform=False,correlateAll=False)
     
     addSuffixToMarkerFinderFile(dabg_gene_dir,'AltExon')
   
-    """  
+    #"""  
     splicedExons = importMarkerFinderExons(dabg_gene_dir,type='AltExon')
     
     if alsoConsiderExpression:
@@ -1826,7 +1838,8 @@ def importAndAverageStatsData(expr_input,compendium_filename,platform):
                     ### Convert to log2 RPKM values - or counts
                     values = map(lambda x: math.log(float(x),2), t[1:])
                 else:
-                    values = map(float,t[1:])
+                    try: values = map(float,t[1:])
+                    except Exception: values = logTransformWithNAs(t[1:])
                 avg_z=[]
                 for group_name in group_index_db:
                     group_values = map(lambda x: values[x], group_index_db[group_name]) ### simple and fast way to reorganize the samples
@@ -1835,6 +1848,14 @@ def importAndAverageStatsData(expr_input,compendium_filename,platform):
                 export_data.write(string.join(compendium_annotation_db[uid]+avg_z,'\t')+'\n')
     export_data.close()
     return export_path
+
+def logTransformWithNAs(values):
+    values2=[]
+    for x in values:
+        try: values2.append(math.log(float(x),2))
+        except Exception:
+            values2.append(0.00001)
+    return values2
 
 def importAndAverageExport(expr_input,platform,annotationDB=None,annotationHeader=None,customExportPath=None):
     """ More simple custom used function to convert a exp. or stats. file from sample values to group means """
@@ -1900,7 +1921,8 @@ def importAndAverageExport(expr_input,platform,annotationDB=None,annotationHeade
             row_number=1
         else:
             uid = t[0]
-            values = map(float,t[1:])
+            try: values = map(float,t[1:])
+            except Exception: values = logTransformWithNAs(t[1:])
             avg_z=[]
             for group_name in group_index_db:
                 group_values = map(lambda x: values[x], group_index_db[group_name]) ### simple and fast way to reorganize the samples
@@ -1917,9 +1939,9 @@ def importAndAverageExport(expr_input,platform,annotationDB=None,annotationHeade
     return export_path
 
 if __name__ == '__main__':
-    Species='Hs'
-    filename = ('/Users/saljh8/Desktop/demo/SingleCellEmbryo/ExpressionInput/exp.Embryo.txt', '/Users/saljh8/Desktop/demo/SingleCellEmbryo/ExpressionOutput//AVERAGE-Embryo.txt')
-    analyzeData(filename,Species,"3'array","protein_coding",geneToReport=60,correlateAll=True,AdditionalParameters=None,logTransform=True)
+    Species='Mm'
+    filename = ('/Users/saljh8/Desktop/Dan_TRAF6/temp/ExpressionInput/exp.test-steady-state.txt','/Users/saljh8/Desktop/Dan_TRAF6/temp/ExpressionOutput/AVERAGE-test.txt')
+    analyzeData(filename,Species,"RNASeq","protein_coding",geneToReport=60,correlateAll=True,AdditionalParameters=None,logTransform=True)
     sys.exit()
     averageNIValues('/Users/saljh8/Desktop/LineageProfiler/AltResults/RawSpliceData/Hs/splicing-index/meta-average.txt','/Users/saljh8/Desktop/LineageProfiler/ExpressionInput/stats.meta-steady-state.txt',{});sys.exit()
     dabg_file_dir = '/Users/saljh8/Desktop/LineageProfiler/ExpressionInput/stats.meta-steady-state.txt'

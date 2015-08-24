@@ -389,6 +389,12 @@ def venn2_circles(subsets, normalize_to=1.0, alpha=1.0, color='black', linestyle
     >>> c = venn2_circles((1, 2, 3))
     >>> c = venn2_circles({'10': 1, '01': 2, '11': 3}) # Same effect
     '''
+    complete_subets = subsets
+    subsets_abrev = []
+    for i in subsets:
+        subsets_abrev.append(len(i))
+    subsets = tuple(subsets_abrev)
+    
     if isinstance(subsets, dict):
         subsets = [subsets.get(t, 0) for t in ['10', '01', '11']]
     areas = compute_venn2_areas(subsets, normalize_to)
@@ -454,6 +460,13 @@ def venn2(subsets, set_labels=('A', 'B'), set_colors=('r', 'g'), alpha=0.4, norm
     >>> v.get_label_by_id('10').set_text('Unknown')
     >>> v.get_label_by_id('A').set_text('Set A')
     '''
+    
+    complete_subets = subsets
+    subsets_abrev = []
+    for i in subsets:
+        subsets_abrev.append(len(i))
+    subsets = subsets_abrev
+    
     if isinstance(subsets, dict):
         subsets = [subsets.get(t, 0) for t in ['10', '01', '11']]
     areas = compute_venn2_areas(subsets, normalize_to)
@@ -884,6 +897,12 @@ def venn3_circles(subsets, normalize_to=1.0, alpha=1.0, color='black', linestyle
 
     >>> plot = venn3_circles({'001': 10, '100': 20, '010': 21, '110': 13, '011': 14})
     '''
+    complete_subets = subsets
+    subsets_abrev = []
+    for i in subsets:
+        subsets_abrev.append(len(i))
+    subsets = tuple(subsets_abrev)
+    
     # Prepare parameters
     if isinstance(subsets, dict):
         subsets = [subsets.get(t, 0) for t in ['100', '010', '110', '001', '101', '011', '111']]
@@ -926,6 +945,9 @@ class Venn3:
 
 
 def venn3(subsets, set_labels=('A', 'B', 'C'), set_colors=('r', 'g', 'b'), alpha=0.4, normalize_to=1.0):
+    global coordinates
+    coordinates={}
+    
     '''Plots a 3-set area-weighted Venn diagram.
     The subsets parameter is either a dict or a list.
      - If it is a dict, it must map regions to their sizes.
@@ -951,6 +973,12 @@ def venn3(subsets, set_labels=('A', 'B', 'C'), set_colors=('r', 'g', 'b'), alpha
     >>> v.get_label_by_id('C').set_text('Set C')
     '''
     # Prepare parameters
+    complete_subets = subsets
+    subsets_abrev = []
+    for i in subsets:
+        subsets_abrev.append(len(i))
+    subsets = tuple(subsets_abrev)
+    
     if isinstance(subsets, dict):
         subsets = [subsets.get(t, 0) for t in ['100', '010', '110', '001', '101', '011', '111']]
 
@@ -972,7 +1000,8 @@ def venn3(subsets, set_labels=('A', 'B', 'C'), set_colors=('r', 'g', 'b'), alpha
             p.set_alpha(alpha)
             ax.add_patch(p)
     subset_labels = [ax.text(r[2][0], r[2][1], str(s), va='center', ha='center', size=17) if r is not None else None for (r, s) in zip(regions, subsets)]
-
+    #null = [coordinates[120, 200]=labels['1000'] if r is not None else None for (r, s) in zip(regions, complete_subets)]
+    
     # Position labels
     if set_labels is not None:
         # There are two situations, when set C is not on the same line with sets A and B, and when the three are on the same line.

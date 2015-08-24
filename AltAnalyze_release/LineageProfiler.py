@@ -115,7 +115,10 @@ def runLineageProfiler(species,array_type,exp_input,exp_output,codingtype,compen
         vendor, array_type = array_type
         platform = array_type
     else: vendor = 'Not needed'
-
+    
+    if 'other:' in vendor:
+        vendor = string.replace(vendor,'other:','')
+        array_type = "3'array"
     if 'RawSplice' in exp_input or 'FullDatasets' in exp_input or coding_type == 'AltExon':
         analysis_type = 'AltExon'
         if platform != compendium_platform: ### If the input IDs are not Affymetrix Exon 1.0 ST probesets, then translate to the appropriate system
@@ -174,6 +177,7 @@ def runLineageProfiler(species,array_type,exp_input,exp_output,codingtype,compen
                 except Exception: targetPlatform = "3'array"; importTissueSpecificProfiles(species)
         importGeneExpressionValues(exp_input,tissue_specific_db,translation_db)
     zscore_output_dir = analyzeTissueSpecificExpressionPatterns()
+
     return zscore_output_dir
 
 def importVendorToEnsemblTranslations(species,vendor,exp_input):
@@ -245,7 +249,8 @@ def importTissueSpecificProfiles(species):
                 tissue_exp = map(float, t[1:])
                 tissue_specific_db[gene]=x,tissue_exp ### Use this to only grab relevant gene expression profiles from the input dataset
             except Exception:
-                gene = string.split(t[ens_index],'|')[0] ### Only consider the first listed gene - this gene is the best option based on ExpressionBuilder rankings
+                try: gene = string.split(t[ens_index],'|')[0] ### Only consider the first listed gene - this gene is the best option based on ExpressionBuilder rankings
+                except Exception: pass
                 #if 'Pluripotent Stem Cells' in t[marker_in] or 'Heart' in t[marker_in]:
                 #if t[marker_in] not in tissues_added: ### Only add the first instance of a gene for that tissue - used more for testing to quickly run the analysis
                 tissue_exp = map(float, t[tissue_index:])
@@ -283,10 +288,11 @@ def simpleUIDImport(filename):
         uid_db[string.split(data,'\t')[0]]=[]
     return uid_db
         
-def importGeneExpressionValues(filename,tissue_specific_db,translation_db):
+def importGeneExpressionValues(filename,tissue_specific_db,translation_db,useLog=False):
     ### Import gene-level expression raw values           
     fn=filepath(filename); x=0; genes_added={}; gene_expression_db={}
     dataset_name = export.findFilename(filename)
+    max_val=0
     print 'importing:',dataset_name
     for line in open(fn,'rU').xreadlines():
         data = cleanUpLine(line)
@@ -317,13 +323,21 @@ def importGeneExpressionValues(filename,tissue_specific_db,translation_db):
                 try:
                     exp_vals = map(float, t[1:])
                     if platform == 'RNASeq':
+                        if max(exp_vals)>max_val: max_val = max(exp_vals)
                         #if max(exp_vals)<3: proceed=False
-                        exp_vals = map(lambda x: math.log(x+1,2),exp_vals)
+                        if useLog==False:
+                            exp_vals = map(lambda x: math.log(x+1,2),exp_vals)
                     if value_type == 'calls': ### Hence, this is a DABG or RNA-Seq expression
                         exp_vals = produceDetectionCalls(exp_vals,targetPlatform) ### 0 or 1 calls
                     if proceed:
                         gene_expression_db[gene] = [index,exp_vals]
                 except Exception:
+                    print 'Non-numeric values detected:'
+                    x = 5
+                    print t[:x]
+                    while x < t:
+                        t[x:x+5]
+                        x+=5
                     print 'Formatting error encountered in:',dataset_name; forceError
 
     print len(gene_expression_db), 'matching genes in the dataset and tissue compendium database'
@@ -334,6 +348,9 @@ def importGeneExpressionValues(filename,tissue_specific_db,translation_db):
     #print len(expession_subset);sys.exit()
     expession_subset.sort() ### This order now matches that of 
     gene_expression_db=[]
+    
+    if max_val<20 and platform == 'RNASeq':
+        importGeneExpressionValues(filename,tissue_specific_db,translation_db,useLog=True)
 
 def produceDetectionCalls(values,Platform):
     # Platform can be the compendium platform (targetPlatform) or analyzed data platform (platform or array_type)

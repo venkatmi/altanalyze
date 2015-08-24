@@ -70,9 +70,24 @@ def getHMDBData(species):
                         except KeyError: db = {hmdb_id:1}; interaction_db[ensembl] = db ###weight of 1 (weights currently not-supported)
                 except Exception: None
                  
+def verifyFile(filename):
+    status = 'not found'
+    try:
+        fn=filepath(filename)
+        for line in open(fn,'rU').xreadlines(): status = 'found';break
+    except Exception: status = 'not found'
+    return status
+
 def importInteractionDatabases(interactionDirs):
     """ Import multiple interaction format file types (designated by the user) """
-    
+    exclude=[]
+    for file in interactionDirs:
+        status = verifyFile(file)
+        if status == 'not found':
+            exclude.append(file)
+    for i in exclude:
+        interactionDirs.remove(i)
+        
     for fn in interactionDirs:    #loop through each file in the directory to output results
         x=0; imported=0; stored=0
         file = export.findFilename(fn)
@@ -731,7 +746,7 @@ def buildInteractions(species,Degrees,inputType,inputDir,outputdir,interactionDi
         i = export.findFilename(i)
         i=string.split(i,'-')[1]
         intNameShort+=i[0]
-    
+
     importInteractionData(interactionDirs)
     getHMDBData(species) ### overwrite the symbol annotation from any HMDB that comes from a WikiPathway or KEGG pathway that we also include (for consistent official annotation) 
     
