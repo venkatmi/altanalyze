@@ -1,0 +1,9 @@
+AltAnalyze is a freely available, open-source and cross-platform program that allows you to take [RNASeq](RNASeq.md) or raw microarray data (CEL files or normalized), perform differential expression analyses, predict cell composition, predict predominant expression patterns, identify predicted alternative splicing or alternative promoter changes and view how these changes may affect protein sequence, domain composition, and microRNA targeting. Multiple advanced visualization and pattern discovery analyses are supported, including those for [single-cell analysis](ICGS.md). AltAnalyze is compatible with any [RNASeq](RNASeq.md) data (exons and/or junctions), several Affymetrix splicing sensitive array types ([Gene 1.0](AffyGeneArray.md), [Exon 1.0](AffyExonArray.md), [junction](JAY.md), HTA 2.0) as well as many [conventional array-types](CompatibleArrays.md) (e.g., Affymetrix, Illumina, Agilent). This software requires no advanced knowledge of bioinformatics programs or scripting. All you will need are your junction/exon read or microarray files along with some simple descriptions of the conditions that you're analyzing. [RNASeq](RNASeq.md) support is introduced in [AltAnalyze 2.0](http://code.google.com/p/altanalyze/downloads/list?can=2&q=version+2.02).
+
+[AltAnalyze documentation](http://www.altanalyze.org/help_main.htm), installers are provided on this website as well as at http://www.altanalyze.org. For questions not addressed here, please [contact us](ContactUs.md).
+
+Please note, we have migrated this Wiki and code repository to [Github](https://github.com/nsalomonis/altanalyze). However, documentation on this site remains accessible (specifically for version less than AltAnalyze 2.0.9.1).
+
+**News Update** [8/23/15](News.md)
+
+![http://www.altanalyze.org/image/AltAnalyze_structure_v3.jpg](http://www.altanalyze.org/image/AltAnalyze_structure_v3.jpg)
